@@ -35,6 +35,7 @@ use vars qw($FS $ID $NUKELIST $VOS);
 
 use Date::Parse qw(str2time);
 use Getopt::Long qw(GetOptions);
+use POSIX qw(strftime);
 
 ##############################################################################
 # Overrides
@@ -125,9 +126,10 @@ $| = 1;
 # Parse our options.
 my $fullpath = $0;
 $0 =~ s%.*/%%;
-my ($file, $force, $help, $justprint, $mountpoint, $version);
+my ($date, $file, $force, $help, $justprint, $mountpoint, $version);
 Getopt::Long::config ('bundling', 'no_ignore_case');
-GetOptions ('file|f=s'             => \$file,
+GetOptions ('date|d'               => \$date,
+            'file|f=s'             => \$file,
             'force|F'              => \$force,
             'help|h'               => \$help,
             'mountpoint|m'         => \$mountpoint,
@@ -204,12 +206,17 @@ for (@commands) {
 }
 if ($file && !$justprint) {
     open (LIST, ">> $file") or die "$0: cannot open $file: $!\n";
-    print LIST $volume, "\n";
-    close LIST or die "$0: cannot write to $file: $!\n";
+    if ($date) {
+        my $date = strftime ('%Y-%m-%d', localtime);
+        print LIST "$date $volume\n";
+    } else {
+        print LIST $volume, "\n";
+    }
+    close LIST;
 }
 if ($mountpoint) {
     print "$FS rmmount $mountpoint\n";
-    unless ($justprint) { system ($FS, 'rmmount', $mountpoint) }
+    system ($FS, 'rmmount', $mountpoint) unless $justprint;
 }
 __END__
 
@@ -223,7 +230,7 @@ volnuke -- Delete a volume, tracking down what servers it's on
 
 =head1 SYNOPSIS
 
-volnuke [B<-Fhvn>] [B<-f> I<list-file>] I<volume>
+volnuke [B<-dFhvn>] [B<-f> I<list-file>] I<volume>
 
 volnuke [B<-Fn>] [B<-f> I<list-file>] B<-m> I<mountpoint>
 
@@ -242,6 +249,12 @@ lsmount>, and then removes that mount point when it finishes.
 =head1 OPTIONS
 
 =over 4
+
+=item B<-d>, B<--date>
+
+When writing the name of the deleted volume to a file (see the B<-f>
+option), prepend the current date as YYYY-MM-DD and then a space to each
+line.
 
 =item B<-F>, B<--force>
 
