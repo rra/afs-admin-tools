@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/perl -w
 $ID = q$Id$;
 #
 # partinfo -- Show summary of space on AFS server partitions.
@@ -12,60 +12,90 @@ $ID = q$Id$;
 # includes percent full on each partition and how much more data can be
 # added to that partition before putting it over 80% full.
 
-# Make sure our arguments make sense.
+use vars qw($ID);
+use Getopt::Long qw(GetOptions);
+
+# Parse our options.
 my $fullpath = $0;
 $0 =~ s%.*/%%;
-my $color;
-while ($ARGV[0] =~ /^-/) {
-    $_ = shift;
-    if (/h/) {
-        print "Feeding myself to perldoc, please wait....\n";
-        exec ('perldoc', '-t', $fullpath);
-    }
-    if (/v/) {
-        my $version = join (' ', (split (' ', $ID))[1,2]);
-        $version =~ s/,v\b//;
-        die $version, "\n";
-    }
-    if (/c/) { $color = 1; require Term::ANSIColor }
-    if (/q/) { $^ = 'EMPTY' }
+my ($color, $help, $quiet, $totals, $version);
+Getopt::Long::config ('bundling', 'no_ignore_case');
+GetOptions ('color|c'   => \$color,
+            'help|h'    => \$help,
+            'quiet|q'   => \$quiet,
+            'total|t'   => \$totals,
+            'version|v' => \$version) or exit 1;
+if ($help) {
+    print "Feeding myself to perldoc, please wait....\n";
+    exec ('perldoc', '-t', $fullpath);
+} elsif ($version) {
+    my $version = join (' ', (split (' ', $ID))[1,2]);
+    $version =~ s/,v\b//;
+    die $version, "\n";
 }
+if ($color) { $color = 1; require Term::ANSIColor }
+if ($quiet) { $^ = 'EMPTY' }
 die "Usage: $0 <afssvr>\n" if (@ARGV != 1);
-die "$ARGV[0] is not an AFS server\n" unless ($ARGV[0] =~ /^afssvr[1-9]/);
+my $server = shift;
+$server = 'afssvr' . $server if ($server =~ /^\d+$/);
 
 # We can't use formats if we're using color because format mangles color
 # output.  *sigh*
-if ($color && $^ ne 'EMPTY') {
-    printf ("%17s: %10s %10s %10s %8s %10s\n", 'Partition', 'Total', 'Used',
-            'Free', '%Full', 'Available');
+if ($color && !$quiet) {
+    printf "%17s: %10s %10s %10s %8s %10s\n", 'Partition', 'Total', 'Used',
+            'Free', '%Full', 'Available';
 }
 
 # Run vos partinfo and parse the output.  If we're doing color, we have to
 # use printf instead of formats.
-my ($partition, $used, $total, $free, $usable, $pfree);
-open (PARTINFO, "vos partinfo $ARGV[0] |") or die "$0: can't fork: $!\n";
+my ($partition, $used, $total, $free, $usable, $pfree, $tused, $ttotal,
+    $tfree, $tpfree, $tusable);
+open (PARTINFO, "vos partinfo $server |") or die "$0: can't fork: $!\n";
 while (<PARTINFO>) {
     if (m%^Free space on partition (/vicep\S+): (\d+) K .* total (\d+)$%) {
         ($partition, $free, $total) = ($1, $2, $3);
-        $partition = "$ARGV[0] $partition";
+        $partition = "$server $partition";
         $used = $total - $free;
         $usable = int ($free - 0.2 * $total);
         $pfree = 100 * $used / $total;
         if ($color) {
-            my $c;
+            my $c = '';
             if    ($pfree < 60) { $c = Term::ANSIColor::color ('green')  }
             elsif ($pfree > 80) { $c = Term::ANSIColor::color ('red')    }
-            printf ("%17s: %10d %10d %10d %s%7.2f%%%s %10d\n", $partition,
-                    $total, $used, $free, $c, $pfree,
-                    Term::ANSIColor::color ('reset'), $usable);
+            printf "%17s: %10d %10d %10d %s%7.2f%%%s %10d\n", $partition,
+                   $total, $used, $free, $c, $pfree,
+                   Term::ANSIColor::color ('reset'), $usable;
         } else {
             write;
+        }
+        if ($totals) {
+            $ttotal += $total;
+            $tfree += $free;
         }
     } else {
         print;
     }
 }
 close PARTINFO;
+
+# Print totals if we're supposed to.
+if ($totals) {
+    $tused = $ttotal - $tfree;
+    $tusable = int ($tfree - 0.2 * $ttotal);
+    $tpfree = 100 * $tused / $ttotal;
+    print "\n";
+    if ($color) {
+        my $c = '';
+        if    ($tpfree < 60) { $c = Term::ANSIColor::color ('green')  }
+        elsif ($tpfree > 80) { $c = Term::ANSIColor::color ('red')    }
+        printf "%17s: %10d %10d %10d %s%7.2f%%%s %10d\n", 'TOTAL',
+               $ttotal, $tused, $tfree, $c, $tpfree,
+               Term::ANSIColor::color ('reset'), $tusable;
+    } else {
+        $~ = 'TOTAL';
+        write;
+    }
+}
 
 # The format of our output, including a header that explains the columns.
 format STDOUT_TOP =
@@ -77,8 +107,14 @@ format STDOUT =
 $partition,        $total,    $used,     $free,     $pfree,  $usable
 .
 
+format TOTAL =
+                   @>>>>>>>>> @>>>>>>>>> @>>>>>>>>> @###.##% @>>>>>>>>>
+                   $ttotal,   $tused,    $tfree,    $tpfree, $tusable
+.
+
 format EMPTY =
 .
+
 __END__
 
 ############################################################################
@@ -91,7 +127,7 @@ partinfo - Show summary of space on AFS server partitions
 
 =head1 SYNOPSIS
 
-partinfo [B<-hvcq>] I<afssvr>
+partinfo [B<-hvcqt>] I<afssvr>
 
 =head1 DESCRIPTION
 
@@ -136,6 +172,10 @@ module is not required if B<-c> is not used).
 Suppress the header normally printed to explain the meanings of each column
 of data.
 
+=item B<-t>, B<--total>
+
+Print totals for the entire server.
+
 =back
 
 =head1 EXAMPLES
@@ -161,6 +201,7 @@ L<vos(1)>, L<vos_partinfo(1)>
 
 Original Perl script written by Neil Crellin E<lt>neilc@stanford.eduE<gt>,
 modified by Russ Allbery E<lt>rra@stanford.eduE<gt> to use formats, to
-include an explanatory header, and to use color if wanted.
+include an explanatory header, to use color if wanted, and to add optional
+totals.
 
 =cut
