@@ -44,7 +44,7 @@ $mtpt =~ s%/+$%%;
 
 # Canonify AFS server name.
 if ($server =~ /^\d+$/) { $server = "afssvr$server" }
-die "$server is not an afssvr\n" unless $server =~ /^afssvr\d+$/;
+die "$server is not an afs server.\n" unless $server =~ /^afssvr\d+$|^gsbafs\d$/;
 
 # Append system:backup rl on ACL list to allow ADSM backups.
 push (@acls, 'system:backup', 'rl');
