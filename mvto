@@ -5,7 +5,7 @@ $ID = q$Id$;
 #
 # Written by Russ Allbery <rra@stanford.edu>
 # Based on code by Neil Crellin <neilc@stanford.edu>
-# Copyright 1998, 1999, 2001, 2003, 2004
+# Copyright 1998, 1999, 2001, 2003, 2004, 2005
 #    Board of Trustees, Leland Stanford Jr. University
 #
 # This program is free software; you may redistribute it and/or modify it
@@ -25,11 +25,15 @@ $ID = q$Id$;
 require 5.004;
 
 use strict;
-use vars qw($ID $JUSTPRINT $VOS);
+use vars qw($ID $JUSTPRINT $THRESHOLD $VOS);
 use subs qw(system);
 
 use Date::Parse qw(str2time);
 use Getopt::Long qw(GetOptions);
+
+# The threshold up to which mvto is willing to fill a partition, expressed as
+# a ratio of its total available space.
+$THRESHOLD = '0.90';
 
 # Find a usable version of vos.
 ($VOS) = grep { -x $_ } qw(/usr/bin/vos /usr/pubsw/bin/vos);
@@ -74,7 +78,7 @@ sub findpartition {
             } elsif (m%^Free space on partition (/vicep.)%) {
                 next;
             } else {
-                die "$0: vos partinfo said $_\n";
+                die "$0: vos partinfo said $_";
             }
         }
         @free = sort { $$b[1] <=> $$a[1] } @free;
@@ -86,6 +90,26 @@ sub findpartition {
     return ($server, $part);
 }
 
+# Get the available space on one particular AFS partition, used as a safeguard
+# to make sure that we don't move a volume to somewhere where there isn't
+# sufficient space.  Returns the space available before the partition reaches
+# $THRESHOLD.
+sub available_space {
+    my ($server, $partition) = @_;
+    return if $THRESHOLD >= 1.0;
+    open (INFO, "$VOS partinfo $server $partition |")
+        or die "$0: can't fork: $!\n";
+    local $_;
+    while (<INFO>) {
+        if (m%^Free space on \S+ \S+: (\d+) K blocks out of total (\d+)%) {
+            my ($free, $total) = ($1, $2);
+            return ($free - $total * (1 - $THRESHOLD));
+        } else {
+            die "$0: vos partinfo said $_";
+        }
+    }
+    die "$0: no valid output from vos partinfo\n";
+}
 
 # Given a volume name, determines various characteristics of the volume and
 # returns them in a hash.  'size' gets the volume size in KB, 'rwserver' and
@@ -204,18 +228,24 @@ sub move_rw {
     my @from = ($fromserver, $frompart);
     my %ro = %{ $$volinfo{ro} };
 
-    # If the read/write is already on the right server, make sure there's also
-    # a replica on the same partition if the volume is replicated.  Otherwise,
+    # If the volume is replicated and the read/write is already on the right
+    # server, we won't actually move it.  Just make sure there's also a
+    # replica on the same partition if the volume is replicated.  Otherwise,
     # move the read/write site and its corresponding replica if applicable.
-    if ($fromserver eq $toserver) {
+    # If the volume is not replicated, we're always willing to move the
+    # read/write site, even to another partition on the same server.
+    if ($fromserver eq $toserver && $$volinfo{sites} > 0) {
         print "$volume is already on $fromserver\n";
         if ($ro{$toserver}) {
             delete $$volinfo{ro}{$toserver};
-        } elsif ($$volinfo{sites} > 0) {
+        } else {
             push (@commands, addsite (@to, $volume));
             $needrelease++;
         }
     } else {
+        if (available_space (@to) < $$volinfo{size}) {
+            die "$0: moving $volume would overfill @to\n";
+        }
         push (@commands, move ($volume, @from, @to));
         push (@commands, backup ($volume));
         if ($$volinfo{sites} > 0) {
@@ -253,6 +283,10 @@ sub move_ros {
             print "$volume is already on $server\n";
             delete $$volinfo{ro}{$server};
         } else {
+            if (available_space ($server, $part) < $$volinfo{size}) {
+                die "$0: adding $volume replica would overfill"
+                    . " $server $part\n";
+            }
             push (@commands, addsite ($server, $part, $volume));
             $needrelease++;
         }
@@ -339,6 +373,9 @@ sub move_single {
     # Build commands to move the appropriate portion of the volume.
     my ($needrelease, @commands);
     if ($source[0] eq $volinfo{rwserver} && $source[1] eq $volinfo{rwpart}) {
+        if (available_space (@dest) < $volinfo{size}) {
+            die "$0: moving $volume would overfill @dest\n";
+        }
         push (@commands, move ($volume, @source, @dest));
         push (@commands, backup ($volume));
         if ($volinfo{sites} > 0) {
@@ -353,6 +390,9 @@ sub move_single {
     } elsif ($volinfo{sites} > 0 && $source[1] eq $volinfo{ro}{$source[0]}) {
         if ($volinfo{ro}{$dest[0]}) {
             die "$0: $volume already has a replica on on $dest[0]\n";
+        }
+        if (available_space (@dest) < $volinfo{size}) {
+            die "$0: adding $volume replica would overfill @dest\n"
         }
         push (@commands, addsite (@dest, $volume));
         $needrelease++;
@@ -379,7 +419,9 @@ sub move_single {
 ##############################################################################
 
 # Usage message, in case the command line syntax is wrong.
-sub usage { die "Usage: $0 <vol> <server> <part> [<server> <part> ...]\n" }
+sub usage {
+    die "Usage: $0 [-fns] <vol> <server> <part> [<server> <part> ...]\n";
+}
 
 # Trim extraneous garbage from the path.
 my $fullpath = $0;
@@ -389,14 +431,16 @@ $0 =~ s%.*/%%;
 $| = 1;
 
 # Parse our options.
-my ($help, $force, $list, $single, $version);
+my ($help, $force, $list, $location, $single, $version);
 Getopt::Long::config ('bundling', 'no_ignore_case');
-GetOptions ('help|h'               => \$help,
-            'force|f'              => \$force,
-            'list|l=s'             => \$list,
-            'dry-run|just-print|n' => \$JUSTPRINT,
-            'single|s'             => \$single,
-            'version|v'            => \$version) or exit 1;
+GetOptions ('f|force'              => \$force,
+            'h|help'               => \$help,
+            'l|list=s'             => \$list,
+            'L|location-list=s'    => \$location,
+            'n|dry-run|just-print' => \$JUSTPRINT,
+            's|single'             => \$single,
+            't|threshold=f'        => \$THRESHOLD,
+            'v|version'            => \$version) or exit 1;
 if ($help) {
     print "Feeding myself to perldoc, please wait....\n";
     exec ('perldoc', '-t', $fullpath);
@@ -409,14 +453,22 @@ if ($help) {
     exit 0;
 }
 
-# Volume name is always the first argument unless -l was given, and the rest
-# of our arguments must be server and partition pairs.
+# Volume name is always the first argument unless -l or -L was given, and the
+# rest of our arguments must be server and partition pairs.
 my $volume;
-unless ($list) {
+unless ($list || $location) {
     usage if (@ARGV < 3);
     $volume = shift;
 }
 usage if (@ARGV % 2 != 0);
+
+# It doesn't make sense to combine -l and -L.
+die "$0: both -l and -L may not be specified at the same time\n"
+    if ($list && $location);
+
+# If -L is given, there should be no other command-line arguments.
+die "Usage: $0 [-fns] [-t <threshold>] -L <list>\n"
+    if ($location && @ARGV > 0);
 
 # If -s was given, there must be exactly four arguments left, a pair giving
 # the current server and partition, and a pair saying where that replica of
@@ -427,8 +479,9 @@ die "Usage: $0 -s (-l <list> | <volume>) <server> <part> <server> <part>\n"
 die "$0: cannot move a specific site between partitions on the same server\n"
     if ($single && $ARGV[0] eq $ARGV[2]);
 
-# Do the work.  If -l was given, this means looping on the volumes listed in
-# that file; otherwise, just move the single volume.
+# Do the work.  If -l or -L was given, this means looping on the volumes
+# listed in that file; otherwise, just move the single volume.
+$list ||= $location;
 if ($list) {
     open (LIST, $list) or die "$0: cannot open $list: $!\n";
     my @volumes = <LIST>;
@@ -438,11 +491,18 @@ if ($list) {
     my $i = 0;
     for (@volumes) {
         $i++;
-        print "MOVING $_ ($i of $total)\n\n";
-        if ($single) {
-            move_single ($_, $force, @ARGV);
+        my ($volume, @where);
+        if ($location) {
+            ($volume, @where) = split (' ', $_);
         } else {
-            move_volume ($_, $force, @ARGV);
+            $volume = $_;
+            @where = @ARGV;
+        }
+        print "MOVING $volume ($i of $total)\n\n";
+        if ($single) {
+            move_single ($volume, $force, @where);
+        } else {
+            move_volume ($volume, $force, @where);
         }
         print "\n";
         print "\n" unless ($i == $total);
@@ -468,10 +528,13 @@ mvto - Move an AFS volume from anywhere, intelligently
 
 =head1 SYNOPSIS
 
-mvto [B<-hfnsv>] I<volume> I<server> I<partition> [I<server> I<partition> ...]
-
-mvto [B<-hfnsv>] [B<-l> I<list>] I<server> I<partition>
+mvto [B<-hfnsv>] [B<-t> I<threshold>] I<volume> I<server> I<partition>
 [I<server> I<partition> ...]
+
+mvto [B<-fns>] B<-l> I<list> [B<-t> I<threshold>] I<server> I<partition>
+[I<server> I<partition> ...]
+
+mvto [B<-fns>] B<-L> I<list> [B<-t> I<threshold>]
 
 =head1 DESCRIPTION
 
@@ -485,15 +548,20 @@ put a replica.  (One replica is automatically put on the same partition as
 the read/write, if any replication sites are specified, so the result will
 be a replication site on every server/partition pair given.)
 
-If the volume is already located on the same server as the destination, even
-if it's on a different partition, this is considered by B<mvto> to be "good
-enough" and the volume will not be moved.  Similarly with replication sites,
-if there is already a replication site on that server (even on a different
-partition), that replication site won't be moved or removed and will be
-counted as one of the replication sites for the volume.  To move volumes
-between partitions on the same server requires more finesse and special
-cases since one cannot have two replicas on the same server, so it should be
-done by hand.
+B<mvto> will check the available space on the partition to which a volume is
+being moved and any partitions where replicas are being added and will
+decline to do anything if its operation would take that partition over 90%
+full.  This threshold can be changed with the B<-t> option.
+
+If the volume is replicated and is already located on the same server as the
+destination, even if it's on a different partition, this is considered by
+B<mvto> to be "good enough" and the volume will not be moved.  Similarly
+with replication sites, if there is already a replication site on that
+server (even on a different partition), that replication site won't be moved
+or removed and will be counted as one of the replication sites for the
+volume.  To move replicated volumes between partitions on the same server
+requires more finesse and special cases since one cannot have two replicas
+on the same server, so it should be done by hand.
 
 If any details about the replication of the volume had to be changed (and
 the volume is replicated), the volume will be released.  In practice, this
@@ -557,6 +625,30 @@ list of AFS volume names, one per line, and each volume will be moved as if
 it were specified on the B<mvto> command line, using the location
 information given on the command line.
 
+=item B<-L> I<list>, B<--location-list>=I<list>
+
+Similar to B<-l> described above, but rather than taking just a list of
+volumes, one per line, instead expect a list of volumes followed by server
+and partition information for where to put those volumes.  The server and
+partition information should be separated by whitespace and will be
+interpreted exactly as if it were given on the command line.
+
+For example, running C<mvto -L list> with a file named F<list> that
+contains:
+
+    user.rra afssvr12 .
+    user.neilc afssvr10 e
+
+would be equivalent to running the two commands:
+
+    mvto user.rra afssvr12 .
+    mvto user.neilc afssvr10 e
+
+Command-line arguments cannot be given in the I<list> file, only server and
+partition information.  The B<-s> flag may still be given on the command
+line and will affect how the location information in the I<list> file is
+interpreted.
+
 =item B<-n>, B<--dry-run>, B<--just-print>
 
 Print out volume status information and the commands that B<mvto> would run,
@@ -580,6 +672,13 @@ It generally doesn't make any sense to use this option with unreplicated
 volumes.  For those, there's no reason not to use the regular syntax.
 What's special about this option is that it leaves all other sites of a
 volume alone.
+
+=item B<-t> I<threshold>, B<--threshold>=I<threshold>
+
+The safety threshold.  B<mvto> will not move a volume or add a replica to a
+partition if by doing so it would increase the usage of that partition above
+this treshold (specified as a ratio of used space to total space).  The
+default is 0.9 (90% full).  To disable this safety check, use C<-t 1.0>.
 
 =item B<-v>, B<--version>
 
@@ -621,13 +720,11 @@ Do the same for every volume listed in the file F<evacuate>:
 
     mvto -l evacuate -s 10 vicepa 11 .
 
-=head1 SEE ALSO
+Move every volume in the file F<locations> to the locations specified on
+that line of the file, aborting if moving a volume would bring any partition
+to over 85% full:
 
-vos(1), vos_addsite(1), vos_backup(1), vos_examine(1), vos_move(1),
-vos_release(1), vos_remove(1)
-
-The current version of this program is available from its web page at
-L<http://www.eyrie.org/~eagle/software/mvto/>.
+    mvto -t 0.85 -L locations
 
 =head1 AUTHORS
 
@@ -636,10 +733,18 @@ Crellin <neilc@stanford.edu> that only handled unreplicated volumes.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 1998, 1999, 2001, 2003, 2004 Board of Trustees, Leland Stanford
-Jr. University.
+Copyright 1998, 1999, 2001, 2003, 2004, 2005 Board of Trustees, Leland
+Stanford Jr. University.
 
 This program is free software; you may redistribute it and/or modify it
 under the same terms as Perl itself.
+
+=head1 SEE ALSO
+
+vos(1), vos_addsite(1), vos_backup(1), vos_examine(1), vos_move(1),
+vos_release(1), vos_remove(1)
+
+The current version of this program is available from its web page at
+L<http://www.eyrie.org/~eagle/software/mvto/>.
 
 =cut
