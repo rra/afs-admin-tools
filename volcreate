@@ -5,7 +5,7 @@ $ID = q$Id$;
 #
 # Written by Neil Crellin <neilc@stanford.edu>
 #        and Russ Allbery <rra@stanford.edu>
-# Copyright 1998, 1999, 2000, 2002
+# Copyright 1998, 1999, 2000, 2002, 2004
 #     Board of Trustees, Leland Stanford Jr. University
 #
 # This program is free software; you may redistribute it and/or modify it
@@ -16,7 +16,7 @@ $ID = q$Id$;
 # loadmtpt to update the mount point database.
 
 ##############################################################################
-# Modules and declarations
+# Site configuration
 ##############################################################################
 
 # The path to a file containing a list of current AFS servers and their volume
@@ -27,6 +27,9 @@ $SERVERS = '/afs/ir/service/afs/data/serverlist.types';
 # for its format.
 $ACLS = '/afs/ir/service/afs/data/acl-rules';
 
+# The full path to the loadmtpt utility.
+$LOADMTPT = '/afs/ir/service/afs/scripts/loadmtpt';
+
 # The full path to fs and vos.  Allow for Linux where the preferred location
 # may be on local disk.
 ($FS)  = grep { -x $_ } qw(/usr/bin/fs /usr/afsws/bin/fs /usr/pubsw/bin/fs);
@@ -34,10 +37,14 @@ $FS ||= '/usr/afsws/bin/fs';
 ($VOS) = grep { -x $_ } qw(/usr/bin/vos /usr/pubsw/bin/vos);
 $VOS ||= '/usr/pubsw/bin/vos';
 
-require 5.001;
+##############################################################################
+# Modules and declarations
+##############################################################################
+
+require 5.005;
 
 use strict;
-use vars qw($ACLS $FS $ID $JUSTPRINT $SERVERS $VOS);
+use vars qw($ACLS $FS $ID $JUSTPRINT $LOADMTPT $SERVERS $VOS);
 use subs qw(system);
 
 use Getopt::Long qw(GetOptions);
@@ -221,9 +228,24 @@ sub volume_create {
         or die 'Failed to create volume (status ', ($? >> 8), ")\n";
 }
 
+# Clone a volume, given the server, partition, and volume name to use for the
+# new volume and the name of the old volume to clone.
+sub volume_clone {
+    my ($server, $partition, $new, $old) = @_;
+    require File::Temp;
+    my $dump = File::Temp->new;
+    print "Dumping volume $old\n";
+    system ($VOS, 'dump', '-id', $old, '-file', $dump->filename) == 0
+        or die "$0: failed to dump volume $old (status ", ($? >> 8), ")\n";
+    print "Restoring $new from ", $dump->filename, "\n";
+    system ($VOS, 'restore', '-server', $server, '-partition', $partition,
+            '-name', $new, '-file', $dump->filename) == 0
+        or die "$0: failed to create volume $new (status ", ($? >> 8), ")\n";
+}
+
 # Mount the volume, chmod it to 755 since AFS creates it 777, and load the
 # mount point into the database.  chmod the root of the volume to 755 since
-# AFS creates it 777.  Use /usr/afsws/bin/fs to avoid the wrapper.
+# AFS creates it 777.
 sub volume_mount {
     my ($volume, $mtpt) = @_;
     system ($FS, 'mkm', $mtpt, $volume) == 0
@@ -233,7 +255,7 @@ sub volume_mount {
     } else {
         chmod (0755, $mtpt) or warn "Failed to chmod root: $!\n";
     }
-    system ('/afs/ir/service/afs/scripts/loadmtpt', $mtpt) == 0
+    system ($LOADMTPT, $mtpt) == 0
         or warn 'Failed to load mountpoint (status ', ($? >> 8), ")\n";
 }
 
@@ -301,10 +323,11 @@ $0 =~ s%.*/%%;
 
 # Parse command line options.  We do allow an odd number of arguments for
 # ACLs, in order to allow things like -clear.
-my ($help, $replicas, $type, $version);
+my ($clone, $help, $replicas, $type, $version);
 Getopt::Long::config ('bundling', 'no_ignore_case', 'require_order');
-GetOptions ('dry-run|just-print|n' => \$JUSTPRINT,
+GetOptions ('clone|c=s'            => \$clone,
             'help|h'               => \$help,
+            'dry-run|just-print|n' => \$JUSTPRINT,
             'replicas|r=i'         => \$replicas,
             'type|t=s'             => \$type,
             'version|v'            => \$version) or exit 1;
@@ -358,9 +381,15 @@ if ($type) {
 }
 
 # Do the work of creating and mounting the read/write volume.
-volume_create ($server, $partition, $volume, $quota);
+if ($clone) {
+    volume_clone ($server, $partition, $volume, $clone);
+} else {
+    volume_create ($server, $partition, $volume, $quota);
+}
 volume_mount ($volume, $mtpt);
-volume_setacls ($volume, $mtpt, @acls);
+unless ($clone) {
+    volume_setacls ($volume, $mtpt, @acls);
+}
 
 # If the volume is replicated, take care of creating and releasing the
 # replicas now that the ACL is set correctly.
@@ -380,11 +409,11 @@ volcreate - Create and mount a new AFS volume
 
 =head1 SYNOPSIS
 
-B<volcreate> [B<-hvn>] I<server> I<part> I<volume> I<quota> I<mount>
-[I<acl> ...]
+B<volcreate> [B<-hvn>] [B<-c> I<clone-from>] I<server> I<part> I<volume>
+I<quota> I<mount> [I<acl> ...]
 
-B<volcreate> [B<-hvn>] B<-t> I<type> [B<-r> I<replicas>] I<volume> I<quota>
-I<mount> [I<acl> ...]
+B<volcreate> [B<-hvn>] [B<-c> I<clone-from>] B<-t> I<type>
+[B<-r> I<replicas>] I<volume> I<quota> I<mount> [I<acl> ...]
 
 =head1 DESCRIPTION
 
@@ -426,6 +455,16 @@ governed by the F<acl-rules> file; see L<FILES> below.
 =head1 OPTIONS
 
 =over 4
+
+=item B<-c> I<clone-from>, B<--clone>=I<clone-from>
+
+Rather than creating a new, empty volume, clone the newly created volume
+from the volume I<clone-from>.  This dumps the old volume into F</tmp>, so
+be careful to do this on a system with a lot of space in F</tmp> if the
+volume is large.  When this option is specified, the quota and ACLs
+specified on the command line will be ignored, since they'll just be
+copied from the old volume.  (The quota must still be specified, though,
+even though it's ignored.  This is a wart in the interface.)
 
 =item B<-h>, B<--help>
 
@@ -486,6 +525,14 @@ pubsw.byacc19 with a quota of 20MB and mount it at
 The correct ACLs for a pubsw volume will be set based on the F<acl-rules>
 file.
 
+Clone ls.trip.nntp into a new ls.trip.news volume, which will be mounted
+at /afs/.ir/site/leland/tripwire/news.Stanford.EDU:
+
+    volcreate -t logs -c ls.trip.nntp ls.trip.news 0 \
+        /afs/.ir/site/leland/tripwire/news.Stanford.EDU
+
+Note that the meaningless 0 quota value is ignored.
+
 =head1 FILES
 
 =over 4
@@ -536,7 +583,8 @@ and the ACL lines must be indented.  Think of it as Python.
 
 =head1 SEE ALSO
 
-L<vos_create(1)>, L<fs_mkmount(1)>, L<fs_setquota(1)>, L<fs_setacl(1)>
+L<vos_create(1)>, L<vos_dump(1)>, L<vos_restore(1)>, L<fs_mkmount(1)>,
+L<fs_setquota(1)>, L<fs_setacl(1)>
 
 =head1 AUTHORS
 
@@ -544,7 +592,7 @@ Neil Crellin <neilc@stanford.edu> and Russ Allbery <rra@stanford.edu>.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 1998, 1999, 2000, 2002 Board of Trustees, Leland Stanford
+Copyright 1998, 1999, 2000, 2002, 2004 Board of Trustees, Leland Stanford
 Jr. University.
 
 This program is free software; you may redistribute it and/or modify it
