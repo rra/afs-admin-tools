@@ -59,6 +59,7 @@ sub report {
             print MAIL "To: $ADDRESS\n";
             print MAIL "Subject: Log volume report ($date)\n";
             print MAIL "\n";
+            $MAILOPEN = 1;
         }
         print MAIL @_;
     } else {
