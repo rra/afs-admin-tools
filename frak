@@ -94,14 +94,14 @@ sub wantedrw {
             } else {            # Directory but not mountpoint
                 print "New directory: $rwtrim\n";
                 $rwlsout = `/bin/ls -ld \Q$rw\E`;
-                $rwlsout =~ s/ \S+\s+$//;
+                $rwlsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*/$1/;
                 print "  $rwlsout\n";
                 print "  ACL is: $rwacl\n";
             }
         } else {                # New, but not a link, dir, or mountpoint
             print "New: $rwtrim\n";
             $rwlsout = `/bin/ls -ld \Q$rw\E`;
-            $rwlsout =~ s/ \S+\s+$//;
+            $rwlsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*/$1/;
             print "  $rwlsout\n";
         }
     } elsif ( $rwislink ) {
@@ -118,14 +118,14 @@ sub wantedrw {
             } else { 
                 print "Directory replaced by link: $rwtrim\n";
                 $rolsout = `/bin/ls -ld \Q$ro\E`;
-                $rolsout =~ s/ \S+\s+$//;
+                $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*/$1/;
                 print "  WAS: $rolsout\n";
                 print "  NOW: $rwlink\n";
             }
         } else {                # Replaces link, not link, dir, or mountpoint
             print "Non-link replaced by link: $rwtrim\n";
             $rolsout = `/bin/ls -ld \Q$ro\E`;
-            $rolsout =~ s/ \S+\s+$//;
+            $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*/$1/;
             print "  WAS: $rolsout\n";
             print "  NOW: $rwlink\n";
         } 
@@ -152,7 +152,7 @@ sub wantedrw {
                 } else {        # RW is mtpt, RO is regular dir
                     print "Directory replaced by mountpoint: $rwtrim\n";
                     $rolsout = `/bin/ls -ld \Q$ro\E`;
-                    $rolsout =~ s/ \S+\s+$//;
+                    $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*/$1/;
                     print "  WAS: $rolsout\n";
                     print "  NOW: -> \#$rwmtpt\n";
                     if ( $rw ne $startrw ) { $File::Find::prune = 1; return; }
@@ -160,14 +160,14 @@ sub wantedrw {
             } else {            # RW is mtpt, RO neither link, dir or mtpt
                 print "File replaced by mountpoint: $rwtrim\n";
                 $rolsout = `/bin/ls -ld \Q$ro\E`;
-                $rolsout =~ s/ \S+\s+$//;
+                $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*/$1/;
                 print "  WAS: $rolsout\n";
                 print "  NOW: -> \#$rwmtpt\n";
                 if ( $rw ne $startrw ) { $File::Find::prune = 1; return; }
             }
         } else {                # RW is Regular directory, not mountpoint
             $rwlsout = `/bin/ls -ld \Q$rw\E`;
-            $rwlsout =~ s/ \S+\s+$//;
+            $rwlsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*/$1/;
             if ( $roislink ) {
                 print "Link replaced by directory: $rwtrim\n";
                 print "  WAS: $rolink\n";
@@ -179,9 +179,7 @@ sub wantedrw {
                     print "  NOW: $rwlsout\n";
                 } else {        # RW and RO are both regular directories
                     $rolsout = `/bin/ls -ld \Q$ro\E`;
-                    $rolsout =~ s/ \S+\s+$//;
-                    $rwlsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+).*/$1/;
-                    $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+).*/$1/;
+                    $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*/$1/;
                     if ( $rwlsout ne $rolsout ) {
                         print "Changed (dirs): $rwtrim\n";
                         print "  WAS: $rolsout\n";
@@ -196,14 +194,14 @@ sub wantedrw {
             } else {            # RW is regular dir, RO is neither link, dir, or mtpt
                 print "File replaced by directory: $rwtrim\n";
                 $rolsout = `/bin/ls -ld \Q$ro\E`;
-                $rolsout =~ s/ \S+\s+$//;
+                $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*/$1/;
                 print "  WAS: $rolsout\n";
                 print "  NOW: $rwlsout\n"
                 }
         } 
     } else {                    # RW is not link, directory, or mountpoint
         $rwlsout = `/bin/ls -ld \Q$rw\E`;
-        $rwlsout =~ s/ \S+\s+$//;
+        $rwlsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*/$1/;
         if ( $roislink ) {      # RW is file, RO is link
             print "Link replaced by non-link: $rwtrim\n";
             print "  WAS: $rolink\n";
@@ -214,14 +212,14 @@ sub wantedrw {
                 print "  WAS: -> \#$romtpt\n";
             } else {            # RW is file, RO is regular dir
                 $rolsout = `/bin/ls -ld \Q$ro\E`;
-                $rolsout =~ s/ \S+\s+$//;
+                $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*/$1/;
                 print "Directory replaced by non-directory: $rwtrim\n";
                 print "  WAS: $rolsout\n";
             }
             print "  NOW: $rwlsout\n";
         } else {                # RW is file, RO is too.
             $rolsout = `/bin/ls -ld \Q$ro\E`;
-            $rolsout =~ s/ \S+\s+$//;
+            $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*/$1/;
             if ( $rwlsout ne $rolsout ){
                 print "Changed: $rwtrim\n";
                 print "  WAS: $rolsout\n";
@@ -279,13 +277,13 @@ sub wantedro {
             } else {
                 print "Deleted directory: $rotrim\n";
 #                $rolsout = `/bin/ls -ld \Q$ro\E`;
-#                $rolsout =~ s/ \S+\s+$//;
+#                $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*/$1/;
 #                print "  $rolsout\n";
             }
         } else {
             print "Deleted: $rotrim\n";
 #            $rolsout = `/bin/ls -ld \Q$ro\E`;
-#            $rolsout =~ s/ \S+\s+$//;
+#            $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*/$1/;
 #            print "  $rolsout\n";
         }
     } elsif ( $roisdir && $roismtpt ) {
