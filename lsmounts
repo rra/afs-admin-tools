@@ -104,7 +104,6 @@ sub check {
     my ($file, $path) = @_;
     $path ||= $file;
     return unless (lstat $file && -d _);
-    $FILE::Find::prune = 1, return if $file eq '..';
     $count++;
     print "$count directories examined\n" if (!$quiet && $count % 1000 == 0);
     my $volume = lsmount $file;
@@ -136,7 +135,7 @@ if ($recurse) {
     @ARGV = map {
         my $dir = $_;
         opendir (D, $dir) or die "$0: can't open directory $dir: $!\n";
-        my @files = map { "$dir/$_" } readdir D;
+        my @files = map { "$dir/$_" } grep { $_ !~ /^\.\.?$/ } readdir D;
         closedir D;
         @files;
     } @ARGV;
