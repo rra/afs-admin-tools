@@ -475,7 +475,7 @@ die "Usage: $0 [-fns] [-t <threshold>] -L <list>\n"
 # the volume should be moved to.  Make sure they don't specify the same
 # server.
 die "Usage: $0 -s (-l <list> | <volume>) <server> <part> <server> <part>\n"
-    if ($single && @ARGV != 4);
+    if ($single && @ARGV != 4 && !$location);
 die "$0: cannot move a specific site between partitions on the same server\n"
     if ($single && $ARGV[0] eq $ARGV[2]);
 
