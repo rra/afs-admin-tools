@@ -259,10 +259,13 @@ $mtpt =~ s%/+$%%;
 
 # Canonify AFS server name and find the exact partition on which to create the
 # read/write volume.
+my @servers;
 if ($type) {
-    ($server, $partition) = find_servers ($type, $replicas > 0 ? 'rw' : '');
+    @servers = find_servers ($type, $replicas > 0 ? 'rw' : '');
+} else {
+    @servers = ($server, $partition);
 }
-($server, $partition) = find_targets ($server, $partition);
+($server, $partition) = find_targets (@servers);
 
 # Do the work of creating and mounting the read/write volume.
 volume_create ($server, $partition, $volume, $quota);
