@@ -198,7 +198,7 @@ for full details.
 
 =item B<-v>, B<--version>
 
-Print out the version of B<partinfo> and exit.
+Print out the version of B<lsmounts> and exit.
 
 =back
 
