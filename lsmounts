@@ -70,14 +70,15 @@ sub lsmount {
 # Parse our options.
 my $fullpath = $0;
 $0 =~ s%.*/%%;
-my ($help, $list, $load, $quiet, $recurse, $version);
+my ($help, $list, $load, $quiet, $deep, $recurse, $version);
 Getopt::Long::config ('bundling', 'no_ignore_case');
-GetOptions ('help|h'    => \$help,
-            'load|L'    => \$load,
-            'list|l'    => \$list,
-            'quiet|q'   => \$quiet,
-            'recurse|r' => \$recurse,
-            'version|v' => \$version) or exit 1;
+GetOptions ('h|help'         => \$help,
+            'L|load'         => \$load,
+            'l|list'         => \$list,
+            'q|quiet'        => \$quiet,
+            'R|recurse'      => \$recurse,
+            'r|safe-recurse' => \$deep,
+            'v|version'      => \$version) or exit 1;
 if ($help) {
     print "Feeding myself to perldoc, please wait....\n";
     exec ('perldoc', '-t', $fullpath);
@@ -89,6 +90,8 @@ if ($help) {
     print $version, "\n";
     exit 0;
 }
+die "$0: only at most one of -R or -r should be given\n"
+    if ($deep && $recurse);
 
 # The sub that does all the work.  Takes in the name of a file, checks to
 # see if it's a directory, and if so checks to see if it's a mount point.
@@ -105,12 +108,15 @@ sub check {
     print "$count directories examined\n" if (!$quiet && $count % 1000 == 0);
     my $volume = lsmount $file;
     if (defined $volume) {
+        $File::Find::prune = 1 unless $recurse;
         if ($list) {
             print "$volume\n";
         } else {
             printf ("%-22s (%s)\n", $volume, $path);
         }
-        system ($LOADMTPT, $file) if $load;
+        system ($LOADMTPT, $file)
+            if ($load && $volume !~ /\.(backup|readonly)$/);
+        $File::Find::prune = 1 if $volume =~ /\.backup$/;
         if ($seen{$volume}) {
             $File::Find::prune = 1;
         } else {
@@ -133,7 +139,12 @@ if ($recurse) {
         closedir D;
         @files;
     } @ARGV;
-    for (@ARGV) { check $_ }
+    if ($deep) {
+        $File::Find::dont_use_nlink = 1;
+        find (sub { check ($_, $File::Find::name) }, @ARGV);
+    } else {
+        for (@ARGV) { check $_ }
+    }
 }
 
 __END__
@@ -167,7 +178,8 @@ option.  Be very careful with this, as with all recursive finds in AFS, as
 you could potentially traverse a very large directory structure.
 B<lsmounts> I<will> cross mount points.  Every 1000 directories it inspects,
 it will print out a status message unless B<-q> is given, and it will keep
-track of volumes it has already seen and will not recurse into them again.
+track of volumes it has already seen and will not recurse into them again
+and will not recurse into backup volumes.
 
 =head1 OPTIONS
 
@@ -182,6 +194,8 @@ C<perldoc -t>).
 
 For each mount point that is found, B<loadmtpt> will be invoked on that path
 to load it into the mount point database if it isn't already recorded.
+Mount points for volumes ending in C<.backup> or C<.readonly> will not be
+recorded.
 
 =item B<-l>, B<--list>
 
@@ -193,11 +207,17 @@ than a human-readable report of both volumes and mount points.
 Don't print out a status message every 1000 directories.  Only print out the
 list of mount points found.
 
-=item B<-r>, B<--recurse>
+=item B<-R>, B<--recurse>
 
 Recurse into the given directories rather than just checking their top-level
 contents.  This option I<will> cross mount points; be careful.  See above
 for full details.
+
+=item B<-r>, B<--safe-recurse>
+
+Recurse into the given directories rather than just checking their top-level
+contents, but do not recurse into any volumes that are found under the given
+directories.
 
 =item B<-v>, B<--version>
 
@@ -220,10 +240,15 @@ through as well:
     lsmounts -lr ~rra
 
 Recurse through /afs/ir/data, looking for mount points and loading any mount
-point that is found.  B<lsmounts> itself won't produce any output; all the
-output will be that of B<loadmtpt>:
+point that is found but without crossing mount points.  B<lsmounts> itself
+won't produce any output; all the output will be that of B<loadmtpt>:
 
     lsmounts -qrL /afs/ir/data
+
+Do the same thing, but do cross mount points (but do not recurse into backup
+volumes or volumes that have already been visited).
+
+    lsmounts -qRL /afs/ir/data
 
 =head1 SEE ALSO
 
