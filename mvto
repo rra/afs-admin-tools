@@ -5,7 +5,7 @@ $ID = q$Id$;
 #
 # Written by Russ Allbery <rra@stanford.edu>
 # Based on code by Neil Crellin <neilc@stanford.edu>
-# Copyright 1998, 1999, 2001
+# Copyright 1998, 1999, 2001, 2003
 #    Board of Trustees, Leland Stanford Jr. University
 #
 # A smart vos move, or a vos move that assumes you know what you're doing,
@@ -15,20 +15,22 @@ $ID = q$Id$;
 # replication pattern of a volume differs from what you want it to be and
 # correct it.
 
-############################################################################
+##############################################################################
 # Modules and declarations
-############################################################################
+##############################################################################
 
 use strict;
-use vars qw($ID);
+use vars qw($ID $VOS);
 
 use Date::Parse qw(str2time);
 use Getopt::Long qw(GetOptions);
 
+# Find a usable version of vos.
+($VOS) = grep { -x $_ } qw(/usr/bin/vos /usr/pubsw/bin/vos);
 
-############################################################################
+##############################################################################
 # Overrides
-############################################################################
+##############################################################################
 
 # Override system with something that checks return status.
 use subs qw(system);
@@ -37,22 +39,20 @@ sub system {
         or die "$0: @_ failed (status " . ($? >> 8) . ")\n";
 }
 
-
-############################################################################
+##############################################################################
 # AFS information
-############################################################################
+##############################################################################
 
-# Given a server name and a partition, fully qualify both and return them as
-# a list of ($server, $partition).  Accepts - as the partition to pick the
-# least loaded partition on that server, or a list of letters or letter
-# ranges to pick the least loaded of the partitions on the server from that
-# range.
+# Given a server name and a partition, fully qualify both and return them as a
+# list of ($server, $partition).  Accepts - as the partition to pick the least
+# loaded partition on that server, or a list of letters or letter ranges to
+# pick the least loaded of the partitions on the server from that range.
 sub findpartition {
     my ($server, $part) = @_;
     $server = 'afssvr' . $server if ($server =~ /^\d+$/);
     if ($part eq '.' || (length ($part) > 1 && $part =~ /^[a-z-]+$/)) {
         $part = 'a-z' if $part eq '.';
-        open (INFO, "vos partinfo $server |") or die "$0: can't fork: $!\n";
+        open (INFO, "$VOS partinfo $server |") or die "$0: can't fork: $!\n";
         my @free;
         local $_;
         while (<INFO>) {
@@ -76,15 +76,15 @@ sub findpartition {
 
 # Given a volume name, determines various characteristics of the volume and
 # returns them in a hash.  'size' gets the volume size in KB, 'rwserver' and
-# 'rwpart' get the server and partition for the read-write volume, 'ro' gets
-# a hash of server and partition values for the replicas, 'sites' gets a
-# count of the number of sites the volume is replicated on, and 'unreleased'
-# gets a boolean value saying whether there are unreleased changes.
+# 'rwpart' get the server and partition for the read-write volume, 'ro' gets a
+# hash of server and partition values for the replicas, 'sites' gets a count
+# of the number of sites the volume is replicated on, and 'unreleased' gets a
+# boolean value saying whether there are unreleased changes.
 sub volinfo {
     my ($volume, $checkro) = @_;
     my (%results, $rotime, $rwtime);
-    open (VEX, "/usr/pubsw/bin/vos examine $volume |")
-        or die "$0: can't fork vos examine: $!\n";
+    open (VEX, "$VOS examine $volume |")
+        or die "$0: can't fork $VOS examine: $!\n";
     local $_;
     while (<VEX>) {
         if (/^\Q$volume\E\s+\d+ (RW|RO|BK)\s+(\d+) K\s+On-line\s*$/) {
@@ -106,8 +106,8 @@ sub volinfo {
     die "$0: unable to parse vos examine $volume\n"
         unless ($results{rwserver} && $results{size});
     if ($results{sites}) {
-        open (VEX, "/usr/pubsw/bin/vos examine $volume.readonly |")
-            or die "$0: can't fork vos examine for readonly: $!\n";
+        open (VEX, "$VOS examine $volume.readonly |")
+            or die "$0: can't fork $VOS examine for readonly: $!\n";
         while (<VEX>) {
             if (/^\s+Last Update (.*)/) {
                 my $tmp = $1;
@@ -120,10 +120,9 @@ sub volinfo {
     return %results;
 }
 
-
-############################################################################
+##############################################################################
 # Implementation
-############################################################################
+##############################################################################
 
 # Usage message, in case the command line syntax is wrong.
 sub usage { die "Usage: $0 <vol> <server> <part> [<server> <part> ...]\n" }
@@ -147,8 +146,8 @@ if ($help) {
     die $version, "\n";
 }
 
-# Volume name is always the first argument.  Pull it off and figure out
-# where this volume is.
+# Volume name is always the first argument.  Pull it off and figure out where
+# this volume is.
 usage if (@ARGV < 3);
 my $volume = shift;
 usage if (@ARGV % 2 != 0);
@@ -188,10 +187,10 @@ if ($volume{rwserver} eq $toserver) {
 }
 
 # Grab the remaining arguments, which give the desired replication.  Build a
-# hash table of the servers the volume is already replicated on, and check
-# the desired state against the current state.  Consider having a replica on
-# the right destination server to be good enough and don't move replicas on
-# the server.
+# hash table of the servers the volume is already replicated on, and check the
+# desired state against the current state.  Consider having a replica on the
+# right destination server to be good enough and don't move replicas on the
+# server.
 my $replicas = 1;
 while (@ARGV) {
     my ($server, $part) = findpartition (splice (@ARGV, 0, 2));
@@ -215,8 +214,8 @@ if ($volume{sites}) {
     }
 }
 
-# Refuse to release a volume with unreleased changes unless --force was
-# given on the command line.
+# Refuse to release a volume with unreleased changes unless --force was given
+# on the command line.
 die "$0: volume has unreleased changes, use --force to force a release\n"
     if ($volume{unreleased} && $volume{sites} && $needrelease && !$force);
 
@@ -239,9 +238,9 @@ for (@commands) {
 
 __END__
 
-############################################################################
+##############################################################################
 # Documentation
-############################################################################
+##############################################################################
 
 =head1 NAME
 
@@ -361,8 +360,7 @@ vos_release(1), vos_remove(1)
 
 =head1 AUTHOR
 
-Russ Allbery E<lt>rra@stanford.eduE<gt>, based on a much simpler script by
-Neil Crellin E<lt>neilc@stanford.eduE<gt> that only handled unreplicated
-volumes.
+Russ Allbery <rra@stanford.edu>, based on a much simpler script by Neil
+Crellin <neilc@stanford.edu> that only handled unreplicated volumes.
 
 =cut
