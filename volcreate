@@ -234,6 +234,7 @@ if ($help) {
     exit 0;
 }
 if ($replicas && !$type) { die "-r option given without -t option\n" }
+$replicas ||= 0;
 
 # Fill in the various information that we need.
 my ($server, $partition, $volume, $quota, $mtpt, @acls);
