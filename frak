@@ -138,8 +138,13 @@ sub getacl ($) {
     local $_;
     
     return "NOT_IN_AFS" unless ( $dir =~ /^\/afs/);
-    open(LISTACL, "/usr/pubsw/bin/fs listacl $dir |") 
-        or die "Unable to perform listacl on $dir: $!\n";
+    my $pid = open(LISTACL, '-|');
+    if ( !defined $pid ) {
+        die "Unable to perform listacl on $dir: $!\n";
+    } elsif ( $pid == 0 ) {
+        exec('/usr/pubsw/bin/fs','listacl',$dir)
+            or die "Can't exec fs listacl on $dir: $!\n";
+    }
     while (<LISTACL>) {
         next if ( $. <= 1 );
         next if /Normal rights:/;
