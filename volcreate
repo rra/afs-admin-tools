@@ -67,7 +67,7 @@ system ('/usr/afsws/bin/fs', 'mkm', $mtpt, $volume) == 0
 system ('/usr/afsws/bin/fs', 'setacl', $mtpt, @acls) == 0
     or warn 'Failed to set acls (status ', ($? >> 8), ")\n";
 chmod (0755, $mtpt) or warn "Failed to chmod root: $!\n";
-system ('/afs/ir/site/leland/afs/scripts/loadmtpt', $mtpt) == 0 
+system ('/afs/ir/service/afs/scripts/loadmtpt', $mtpt) == 0 
     or warn 'Failed to load mountpoint (status ', ($? >> 8), ")\n"; 
 
 __END__
