@@ -33,6 +33,8 @@ $VOS ||= '/usr/pubsw/bin/vos';
 # Modules and declarations
 ##############################################################################
 
+require 5.005;
+
 use strict;
 use vars qw($FS $ID $NUKELIST $VOS);
 
@@ -321,6 +323,9 @@ the top of this script.
 =head1 SEE ALSO
 
 fs_lsmount(1), vos(1), vos_examine(1), vos_remove(1)
+
+The current version of this program is available from its web page at
+L<http://www.eyrie.org/~eagle/software/volnuke/>.
 
 =head1 AUTHOR
 
