@@ -301,7 +301,7 @@ mountpoints.  (Default behavior is to apply the specified fs subcommand to
 all initially specified directories; this is usually the desired
 behavior.)
 
-Of very limited use, and primarily useful only to AFS sysem
+Of very limited use, and primarily useful only to AFS system
 administrators.
 
 =back
