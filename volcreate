@@ -1,0 +1,35 @@
+#!/usr/bin/perl -w
+# $Id$
+#
+# volcreate -- Create a volume, mount and set acl and quota
+#
+# Usage: volcreate server partition volname quota mtpt [acls]
+
+$argc = @ARGV;
+die "Usage: volcreate server partition volname quota mtpt [acls]\n" 
+    if ($argc < 5);
+
+$server  = shift;
+$part    = shift;
+$volname = shift;
+$quota   = shift;
+$mtpt    = shift;
+@acls    = @ARGV;
+
+die "Uneven acl pairs\n" if ( @acls % 2 != 0 );
+
+if ($server =~ /^\d+$/) { $server = "afssvr$server" }
+die "not an afssvr\n" unless $server =~ /^afssvr/;
+
+system('/usr/pubsw/bin/vos', 'create', $server, $part, 
+                             $volname, $quota*1000) == 0 
+    or die "Failed to create volume, status of $?\n";
+system('/usr/pubsw/bin/fs', 'mkm', $mtpt, $volname) == 0
+    or die "Failed to make mount point, status of $?\n";
+if ( @acls ) {
+    system('/usr/pubsw/bin/fs', 'setacl', $mtpt, @acls) == 0
+        or warn "Failed to set acls, status of $?\n";
+}
+system('chmod', '755', $mtpt) == 0 or warn "Couldn't chmod\n";
+system('loadmtpt', $mtpt) == 0 
+    or warn "Couldn't load mountpoint, status of $?\n"; 
