@@ -1,22 +1,178 @@
-#!/usr/bin/perl
+#!/usr/bin/perl -w
 $ID = q$Id$;
 #
-# lsmounts -- List volumes which have mountpoints in directory.
+# lsmounts -- List mountpoints found in a directory.
+#
+# Written by Neil Crellin <neilc@stanford.edu>
+# Modifications by Russ Allbery <rra@stanford.edu>
+# Copyright 1998, 1999 Board of Trustees, Leland Stanford Jr. University
+#
+# Takes a directory and finds all AFS mountpoints in that directory.  Note
+# that this will stat each file in the directory, so you probably don't want
+# to run it on root.afs.
 
-use Cwd;
+use vars qw($ID);
 
-my $directory = $ARGV[0] || cwd;
-opendir(DIR,$directory) or die "Can't open $directory: $!\n";
-while (defined($_ = readdir(DIR))) {
-    $_ = "$directory/$_";
-    lstat($_);
-    if (-d _) {
-        $mtpt = `/usr/pubsw/bin/fs lsmount $_ 2>&1`;
-        $ismtpt = ($? == 0);
-        if ( $ismtpt ) {
-            $mtpt =~ s/.*a mount point for volume \'\#(\S+)\'\s+$/$1/ ;
-            print $mtpt, "\n";
+use Cwd qw(cwd);
+use Getopt::Long qw(GetOptions);
+
+# Shut up -w.
+package File::Find;
+use vars qw($dont_use_nlink $name $prune);
+package main;
+
+# Parse our options.
+my $fullpath = $0;
+$0 =~ s%.*/%%;
+my ($help, $list, $recurse, $version);
+Getopt::Long::config ('bundling', 'no_ignore_case');
+GetOptions ('help|h'    => \$help,
+            'list|l'    => \$list,
+            'recurse|r' => \$recurse,
+            'version|v' => \$version) or exit 1;
+if ($help) {
+    print "Feeding myself to perldoc, please wait....\n";
+    exec ('perldoc', '-t', $fullpath);
+} elsif ($version) {
+    my $version = join (' ', (split (' ', $ID))[1,2]);
+    $version =~ s/,v\b//;
+    die $version, "\n";
+}
+
+# The sub that does all the work.  Takes in the name of a file, checks to
+# see if it's a directory, and if so checks to see if it's a mount point.
+# It maintains a cache of mount points seen and sets $File::Find::prune if
+# it's seen a given mount point before; this will have no effect if we're
+# not recursive.  An optional second argument is the correct path to the
+# file, if the first argument is relative to a changing working directory.
+my ($count, %seen);
+sub check {
+    my ($file, $path) = @_;
+    $path ||= $file;
+    return unless (lstat $file && -d _);
+    if ($file =~ /[\'\n]/) {
+        warn "Skipping unsafe file: $path\n";
+        return;
+    }
+    $count++;
+    print "$count directories examined\n" if ($count % 1000 == 0);
+    my $mtpt = `/usr/pubsw/bin/fs lsmount '$file' 2>&1`;
+    if ($? == 0) {
+        $mtpt =~ s/.*a mount point for volume \'\#(\S+)\'\s+$/$1/;
+        if ($list) {
+            print "$mtpt\n";
+        } else {
+            printf ("%-22s (%s)\n", $mtpt, $path);
+        }
+        if ($seen{$mtpt}) {
+            $File::Find::prune = 1;
+        } else {
+            $seen{$mtpt}++;
         }
     }
 }
-closedir(DIR);
+
+# If we're recursive, take @ARGV as a list of directories to recurse into.
+# Otherwise, take it as a list of directories and files to test.
+@ARGV = ('.') unless @ARGV;
+if ($recurse) {
+    require File::Find;
+    $File::Find::dont_use_nlink = 1;
+    File::Find::find (sub { check ($_, $File::Find::name) }, @ARGV);
+} else {
+    @ARGV = map {
+        my $dir = $_;
+        opendir (D, $dir) or die "$0: can't open directory $dir: $!\n";
+        my @files = map { "$dir/$_" } readdir D;
+        closedir D;
+        @files;
+    } @ARGV;
+    for (@ARGV) { check $_ }
+}
+
+__END__
+
+############################################################################
+# Documentation
+############################################################################
+
+=head1 NAME
+
+lsmounts - List mountpoints found in a directory
+
+=head1 SYNOPSIS
+
+lsmounts [B<-hlrv>] [I<directory> ...]
+
+=head1 DESCRIPTION
+
+B<lsmounts> finds all AFS mount points present in the list of directories
+given on the command line (or in the current directory if no directory is
+given) and prints out a report of all mount points and what volumes they're
+mount points for.  It uses C<fs lsmount> to check each directory present in
+the given directories to see if it's a mount point.
+
+The default output is a human-readable report.  If what is wanted instead is
+a simple list of volumes mounted under the given directories, use the B<-l>
+option.
+
+If B<lsmounts> should recurse into all given directories, pass it the B<-r>
+option.  Be very careful with this, as with all recursive finds in AFS, as
+you could potentially traverse a very large directory structure.
+B<lsmounts> I<will> cross mount points.  Every 1000 directories it inspects,
+it will print out a status message, and it will keep track of volumes it has
+already seen and will not recurse into them again.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-h>, B<--help>
+
+Print out this documentation (which is done simply by feeding the script to
+C<perldoc -t>).
+
+=item B<-v>, B<--version>
+
+Print out the version of B<partinfo> and exit.
+
+=item B<-l>, B<--list>
+
+Print out a simple list of volumes for which mount points were found, rather
+than a human-readable report of both volumes and mount points.
+
+=item B<-r>, B<--recurse>
+
+Recurse into the given directories rather than just checking their top-level
+contents.  This option I<will> cross mount points; be careful.  See above
+for full details.
+
+=back
+
+=head1 EXAMPLES
+
+The following command displays a report of all volume mount points in the
+directory /afs/ir:
+
+        lsmounts /afs/ir
+
+The following command displays a simple list of all volumes found mounted
+under ~rra, decending through its directory structure recursively.  If there
+are other volumes mounted under that directory, they will be searched
+through as well:
+
+        lsmounts -lr ~rra
+
+=head1 SEE ALSO
+
+fs(1), fs_lsmount(1)
+
+=head1 AUTHORS
+
+Original Perl script written by Neil Crellin E<lt>neilc@stanford.eduE<gt>,
+as was the original recursive modification of that script.  Extensively
+modified by Russ Allbery E<lt>rra@stanford.eduE<gt> to merge the two
+scripts, add the human-readable output, and allow multiple command-line
+arguments for the non-recursive case.
+
+=cut
