@@ -515,6 +515,10 @@ L<newsyslog(1)>, L<volcreate(1)>
 The current version of newsyslog is available from its web site at
 L<http://www.eyrie.org/~eagle/software/newsyslog/>.
 
+The current version of this program is available from its web page at
+L<http://www.eyrie.org/~eagle/software/volcreate/>.  B<volcreate> is also
+available from the same page.
+
 =head1 AUTHOR
 
 Russ Allbery <rra@stanford.edu>

@@ -587,6 +587,9 @@ and the ACL lines must be indented.  Think of it as Python.
 L<vos_create(1)>, L<vos_dump(1)>, L<vos_restore(1)>, L<fs_mkmount(1)>,
 L<fs_setquota(1)>, L<fs_setacl(1)>
 
+The current version of this program is available from its web page at
+L<http://www.eyrie.org/~eagle/software/volcreate/>.
+
 =head1 AUTHORS
 
 Neil Crellin <neilc@stanford.edu> and Russ Allbery <rra@stanford.edu>.
