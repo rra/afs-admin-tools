@@ -169,7 +169,7 @@ sub create_volume {
         warn "$volume not created: $mountpoint already exists\n";
         return;
     }
-    if (system ("vos examine $volume >/dev/null 2>&1") == 0) {
+    if (!$JUSTPRINT && system ("vos examine $volume >/dev/null 2>&1") == 0) {
         warn "$volume not created: volume already exists\n";
         return;
     }
@@ -180,7 +180,7 @@ sub create_volume {
             " status ", ($? >> 8), "\n";
         warn "$volume not fully created, please check\n";
     } else {
-        report "Created $volume with quota $quota\n";
+        report "Created $volume with quota ${quota}MB\n";
     }
 }
 
@@ -190,8 +190,12 @@ sub create_month_dirs {
     my ($base) = @_;
     for (1..12) {
         my $month = sprintf ("%02d", $_);
-        mkdir ("$base/$month", 0755)
-            or warn "Could not create $base/$month: $!\n";
+        if ($JUSTPRINT) {
+            print "mkdir $base/$month\n";
+        } else {
+            mkdir ("$base/$month", 0755)
+                or warn "Could not create $base/$month: $!\n";
+        }
     }
 }
 
@@ -203,13 +207,13 @@ sub create_month_dirs {
 # configuration.
 sub parse_log {
     my ($config) = @_;
-    my (%log, $last);
+    my %log;
     while (<$config>) {
         next if /^\s*\#/;
         next if /^\s*$/;
         if (/^\s*\}/) {
             my $okay = 1;
-            for (qw/name path type quota acl/) {
+            for (qw/name path type quota/) {
                 $okay = 0 unless exists $log{$_};
             }
             if ($okay) {
@@ -219,30 +223,18 @@ sub parse_log {
                 return undef;
             }
         }
-        if (/^\s*\S+:\s+/) {
-            my ($key, $value) = split (/:\s+/, $_, 2);
-            $key =~ s/^\s+//;
-            $value =~ s/\s+$//;
-            unless ($value) {
-                warn "Parse error in log group on line $.\n";
-                next;
-            }
-            unless ($key =~ /^(name|path|type|quota|acl)$/) {
-                warn "Unknown attribute $key on line $.\n";
-                next;
-            }
-            $log{$key} = $value;
-            $last = $key;
-        } else {
-            unless ($last) {
-                warn "Parse error in log group on line $.\n";
-                next;
-            }
-            my $value = $_;
-            $value =~ s/^\s+//;
-            $value =~ s/\s+$//;
-            $log{$last} .= $value;
+        my ($key, $value) = split (/:\s+/, $_, 2);
+        $key =~ s/^\s+//;
+        $value =~ s/\s+$//;
+        unless ($value) {
+            warn "Parse error in log group on line $.\n";
+            next;
         }
+        unless ($key =~ /^(name|path|type|quota)$/) {
+            warn "Unknown attribute $key on line $.\n";
+            next;
+        }
+        $log{$key} = $value;
     }
     warn "Unterminated log group on line $.\n";
     return undef;
@@ -325,7 +317,9 @@ for my $config (@config) {
             $path = sprintf ("$$config{path}/%04d/%02d", $year, $month);
             $volume = sprintf ("%s.%04d%02d", $$config{name}, $year, $month);
             if (!-d "$$config{path}/$year") {
-                if (!mkdir ("$$config{path}/$year", 0755)) {
+                if ($JUSTPRINT) {
+                    print "mkdir $$config{path}/$year\n";
+                } elsif (!mkdir ("$$config{path}/$year", 0755)) {
                     warn "Could not create $$config{path}/$year: $!\n";
                     warn "$volume not created\n";
                     next;
@@ -337,6 +331,7 @@ for my $config (@config) {
         }
         if (!-d $path) {
             create_volume ($volume, $path, $$config{quota});
+            create_month_dirs ($path) if $$config{type} eq 'yearly';
         }
     }
 }
