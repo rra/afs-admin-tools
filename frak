@@ -36,7 +36,7 @@ sub getacl ($) {
     while (<LISTACL>) {
         next if ( $. <= 1 );
         next if /Normal rights:/;
-        $prefix = "--" if /Negative rights:/;
+        if /Negative rights:/ { $prefix = "--" ; next; } ;
         ($ptsentity, $permissions) = split(' ');
         $permissions =~ s/rlidwka/all/;
         $acl .= "$prefix$ptsentity=$permissions,"
