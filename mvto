@@ -470,7 +470,7 @@ mvto - Move an AFS volume from anywhere, intelligently
 
 mvto [B<-hfnsv>] I<volume> I<server> I<partition> [I<server> I<partition> ...]
 
-mvto [B<-hfnsv>] [B<-l> I<list> I<server> I<partition>
+mvto [B<-hfnsv>] [B<-l> I<list>] I<server> I<partition>
 [I<server> I<partition> ...]
 
 =head1 DESCRIPTION
