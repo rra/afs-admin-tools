@@ -19,12 +19,19 @@ $ID = q$Id$;
 # The full path to the list of volumes awaiting ADSM deletion.
 $NUKELIST       = '/afs/ir/service/afs/data/adsm-delete';
 
+# The full path to fs and vos.  Allow for Linux where the preferred location
+# may be on local disk.
+($FS)  = grep { -x $_ } qw(/usr/bin/fs /usr/afsws/bin/fs /usr/pubsw/bin/fs);
+$FS ||= '/usr/afsws/bin/fs';
+($VOS) = grep { -x $_ } qw(/usr/bin/vos /usr/pubsw/bin/vos);
+$VOS ||= '/usr/pubsw/bin/vos';
+
 ##############################################################################
 # Modules and declarations
 ##############################################################################
 
 use strict;
-use vars qw($ID $NUKELIST);
+use vars qw($FS $ID $NUKELIST $VOS);
 
 use Date::Parse qw(str2time);
 use Getopt::Long qw(GetOptions);
@@ -47,7 +54,7 @@ sub system {
 # Given a mount point, get the volume name of the volume mounted there.
 sub mount_to_name {
     my $path = shift;
-    my $volume = `fs lsmount '$path'`;
+    my $volume = `$FS lsmount '$path'`;
     die "$0: cannot determine volume from mount point $path\n"
         unless ($volume =~ /^\S+ is a mount point for volume \'\#(\S+)\'$/);
     return $1;
@@ -63,8 +70,8 @@ sub mount_to_name {
 sub volinfo {
     my ($volume, $checkro) = @_;
     my (%results, $rotime, $rwtime);
-    open (VEX, "/usr/pubsw/bin/vos examine $volume |")
-        or die "$0: can't fork vos examine: $!\n";
+    open (VEX, "$VOS examine $volume |")
+        or die "$0: can't fork $VOS examine: $!\n";
     local $_;
     while (<VEX>) {
         if (/^\Q$volume\E\s+\d+ (RW|RO|BK)\s+(\d+) K\s+On-line\s*$/) {
@@ -86,8 +93,8 @@ sub volinfo {
     die "$0: unable to parse vos examine $volume\n"
         unless ($results{rwserver} && $results{size});
     if ($results{sites}) {
-        open (VEX, "/usr/pubsw/bin/vos examine $volume.readonly |")
-            or die "$0: can't fork vos examine for readonly: $!\n";
+        open (VEX, "$VOS examine $volume.readonly |")
+            or die "$0: can't fork $VOS examine for readonly: $!\n";
         while (<VEX>) {
             if (/^\s+Last Update (.*)/) {
                 my $tmp = $1;
@@ -180,11 +187,11 @@ my @commands;
 if ($volume{sites}) {
     for (keys %{ $volume{ro} }) {
         push (@commands,
-              [ qw(vos remove), $_, $volume{ro}{$_}, "$volume.readonly" ]);
+              [ $VOS, 'remove', $_, $volume{ro}{$_}, "$volume.readonly" ]);
     }
 }
 push (@commands,
-      [ qw(vos remove), $volume{rwserver}, $volume{rwpart}, $volume ]);
+      [ $VOS, 'remove', $volume{rwserver}, $volume{rwpart}, $volume ]);
 
 # Okay, run our commands.
 for (@commands) {
@@ -197,8 +204,8 @@ if ($file && !$justprint) {
     close LIST or die "$0: cannot write to $file: $!\n";
 }
 if ($mountpoint) {
-    print "fs rmmount $mountpoint\n";
-    unless ($justprint) { system ('fs', 'rmmount', $mountpoint) }
+    print "$FS rmmount $mountpoint\n";
+    unless ($justprint) { system ($FS, 'rmmount', $mountpoint) }
 }
 __END__
 
