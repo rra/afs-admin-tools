@@ -1,0 +1,22 @@
+#!/usr/bin/perl -w
+
+$argc = @ARGV;
+if ($argc != 3) { die "Wrong args\n"; }
+
+$volname = $ARGV[0];
+$toserver = $ARGV[1];
+$topart = $ARGV[2];
+
+open(VOSEXAM, "/usr/pubsw/bin/vos examine $volname|");
+while (<VOSEXAM>) {
+    if ( m/^\S*\s*[0-9]*\s*(RW|RO|BK)\s*([0-9]*)\s*K\s*\S*/) {
+      $volsize = $2;
+    }
+    if ( m/\s*(\w*)\.stanford\.edu\s*(\/vicep[a-z])/i ) {
+      $srcserver = $1;
+      $srcpart = $2;
+      print "$volname seen on $srcserver $srcpart, $volsize K\n";
+      system "vos move -v $volname $srcserver $srcpart $toserver $topart;vos backup $volname";
+    }
+}
+close(VOSEXAM);
