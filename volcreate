@@ -226,6 +226,8 @@ sub volume_create {
     my ($server, $partition, $volume, $quota) = @_;
     system ($VOS, 'create', $server, $partition, $volume, $quota * 1000) == 0
         or die 'Failed to create volume (status ', ($? >> 8), ")\n";
+    system ($VOS, 'backup', $volume) == 0
+        or die 'Failed to backup volume (status ', ($? >> 8), ")\n";
 }
 
 # Clone a volume, given the server, partition, and volume name to use for the
