@@ -10,6 +10,9 @@ $ID = q$Id$;
 # Modules and declarations
 ##############################################################################
 
+# The address to which to send mailed reports.
+$ADDRESS = 'afs-reports@stanford.edu';
+
 # The path to the config file specifying what to do.
 $CONFIG = '/afs/ir/service/afs/data/log-volumes';
 
@@ -19,10 +22,11 @@ $VOLCREATE = '/afs/ir/service/afs/scripts/volcreate';
 require 5.005;
 
 use strict;
-use vars qw($CONFIG $ID $JUSTPRINT $VOLCREATE);
+use vars qw($ADDRESS $CONFIG $ID $JUSTPRINT $MAIL $MAILOPEN $VOLCREATE);
 use subs qw(system);
 
 use Getopt::Long qw(GetOptions);
+use POSIX qw(strftime);
 
 ##############################################################################
 # Overrides
@@ -36,6 +40,29 @@ sub system {
         return 0;
     } else {
         return CORE::system (@_);
+    }
+}
+
+##############################################################################
+# Reporting
+##############################################################################
+
+# Report an action.  Checks $MAIL to see if the report should be via e-mail,
+# and if so, checks $MAILOPEN to see if we've already started the mail
+# message.
+sub report {
+    if ($MAIL) {
+        unless ($MAILOPEN) {
+            my $date = strftime ("%Y-%m-%d", localtime);
+            open (MAIL, '| /usr/lib/sendmail -t -oi -oem')
+                or die "Cannot fork sendmail: $!\n";
+            print MAIL "To: $ADDRESS\n";
+            print MAIL "Subject: Log volume report ($date)\n";
+            print MAIL "\n";
+        }
+        print MAIL @_;
+    } else {
+        print @_;
     }
 }
 
@@ -62,7 +89,7 @@ sub check_quota {
         return;
     }
     my ($volname, $quota, $used, $percent) = split (' ', $listquota[0]);
-    unless ($percent =~ /%$/) {
+    unless ($percent =~ s/%$//) {
         warn "Unable to parse: $listquota[0]";
         warn "Unable to get quota information for $volume\n";
         return;
@@ -70,10 +97,10 @@ sub check_quota {
 
     # Figure out if we need to do anything.
     my $newquota = $quota;
-    $newquota = int (($quota / 1000) * 1.1) * 1000 if ($used > 90);
+    $newquota = int (($quota / 10000) * 1.1 + 0.9) * 10000 if ($percent > 90);
     $newquota = $minimum if ($newquota < $minimum);
     if ($newquota != $quota) {
-        print "Setting quota to ", $newquota / 1000, " for $volume\n";
+        report "Setting quota to ", $newquota / 1000, "MB for $volume\n";
         if (system ('fs', 'setquota', $mountpoint, $newquota) != 0) {
             warn "fs setquota $mountpoint $newquota exited with status ",
                 ($? >> 8), "\n";
@@ -153,7 +180,7 @@ sub create_volume {
             " status ", ($? >> 8), "\n";
         warn "$volume not fully created, please check\n";
     } else {
-        print "Created $volume with quota $quota\n";
+        report "Created $volume with quota $quota\n";
     }
 }
 
@@ -249,6 +276,7 @@ my ($help, $version);
 Getopt::Long::config ('bundling', 'no_ignore_case');
 GetOptions ('dry-run|just-print|n' => \$JUSTPRINT,
             'help|h'               => \$help,
+            'mail|m'               => \$MAIL,
             'version|v'            => \$version) or exit 1;
 if ($help) {
     print "Feeding myself to perldoc, please wait....\n";
