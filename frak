@@ -225,7 +225,7 @@ sub print_diff ( $$ ) {
     local $_;
     my (@diff, $diff);
     while (<DIFF>) {
-        s{(\s)(?:\Q$ROOTRW\E|\Q$ROOTRO\E)} {$1...} if $. <= 2;
+        s{(\s)(?:\Q$ROOTRO\E|\Q$ROOTRW\E)} {$1...} if $. <= 2;
         push (@diff, $_) if $. <= $MAXDIFF;
     }
     my $output;
