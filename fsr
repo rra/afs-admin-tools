@@ -231,7 +231,7 @@ while (@DirList)
    my $adir = pop(@DirList);
    if ($VERBOSE)  {  print "\nDirectory: $adir\n";  }
    (system($FSBASE, $FSCMD, @FSHEAD, $adir, @FSTAIL) == 0)
-        or die "$0: $FSBASE $FSCMD @FSHEAD $adir @FSTAIL: $?\n";
+        or warn "$0: $FSBASE $FSCMD @FSHEAD $adir @FSTAIL: $?\n";
 }
 
 exit(0);
