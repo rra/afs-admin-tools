@@ -4,41 +4,108 @@ use File::Find;
 
 if ($ARGV[0] eq '-T') { shift; $checktext = 1; }
 
-$rw=$ARGV[0];
-$ro=$rw;
+$argc = @ARGV;
+die "Too many arguments: frak rw [ro]\n" if ($argc > 2);
+
+$rw = $ARGV[0];
+$ro = $rw;
 $ro =~ s:/afs/\.ir\.stanford\.edu/:/afs/ir/: ;
+
+$startrw = $rw;
+$startro = $ro;
 
 $| = 1;
 
 sub wantedrw {
-    $rw=$File::Find::name;
-    $ro=$rw;
+    $rw = $File::Find::name;
+    $ro = $rw;
     $ro =~ s:/afs/\.ir\.stanford\.edu/:/afs/ir/: ;
     ($rwtrim = $rw) =~ s/\.stanford\.edu//;
-    ($rwdev,$rwino,$rwmode,$rwlink,$rwuid,$rwgid,$rwrdev,
-     $rwsize,$rwatime,$rwmtime,$rwctime,$rwblksize,$rwblocks) = lstat($rw);
-    $rwislink = (-l _);
-    $rwexists = (-e _);
-    $rwisdir  = (-d _);
-    ($rodev,$roino,$romode,$rolink,$rouid,$rogid,$rordev,
-     $rosize,$roatime,$romtime,$roctime,$roblksize,$roblocks) = lstat($ro);
-    $roislink = (-l _);
-    $roexists = (-e _);
-    if ( $rwislink && ! $roexists ) {
+
+    if ($rw eq $startrw) {
+        if ( ($oldacl=`/usr/pubsw/bin/fs listacl $ro|/usr/pubsw/bin/sed '1d'`) ne ($newacl=`/usr/pubsw/bin/fs listacl $rw|/usr/pubsw/bin/sed '1d'`) ) {
+            print "ACL changed: $rwtrim\n";
+            print "  WAS: $oldacl";
+            print "  NOW: $newacl";
+        }
+        return;
+    }
+
+    $rwmtpt = `/usr/pubsw/bin/fs lsmount $rw  2>&1`;
+    $rwismtpt = ( $? == 0 ) ;
+    $rwmtpt =~ s/.*is a mount point for volume \'\#(\S+)\'/$1/ if $rwismtpt;
+    $romtpt = `/usr/pubsw/bin/fs lsmount $ro  2>&1`;
+    $roismtpt = ( $? == 0 ) ;
+    $romtpt =~ s/.*is a mount point for volume \'\#(\S+)\'/$1/ if $roismtpt;
+    if ( ! $rwismtpt ) {
+        ($rwdev,$rwino,$rwmode,$rwlink,$rwuid,
+         $rwgid,$rwrdev,$rwsize,$rwatime,
+         $rwmtime,$rwctime,$rwblksize,$rwblocks) = lstat($rw);
+        $rwislink = (-l _);
+        $rwexists = (-e _);
+        $rwisdir  = (-d _);
+    }
+    if ( ! $roismtpt ) {
+        ($rodev,$roino,$romode,$rolink,$rouid,
+         $rogid,$rordev,$rosize,$roatime,
+         $romtime,$roctime,$roblksize,$roblocks) = lstat($ro);
+        $roislink = (-l _);
+        $roexists = (-e _);
+    }
+
+    if ( $rwismtpt && ! $roismtpt ) {
+        if ( ! $roexists ) {
+            print "New mountpoint: $rwtrim -> \#$rwmtpt\n";
+            $File::Find::prune = 1; return;
+        } elsif ( ! $roislink ) {
+            print "Non-link replaced by mountpoint: $rwtrim\n";
+            print "  WAS: ", `/bin/ls -ld $ro`;
+            print "  NOW: -> \#$rwmtpt\n";
+            $File::Find::prune = 1; return;
+        } elsif ( $roislink ) {
+            $rolink = readlink($ro);
+            print "Link replaced by mountpoint: $rwtrim\n";
+            print "  WAS: $rolink\n";
+            print "  NOW: -> \#$rwmtpt\n";
+            $File::Find::prune = 1; return;
+        }
+    } elsif ( ! $rwismtpt && $roismtpt ) {
+        if ( ! $rwislink ) {
+            print "Mountpoint replaced by non-link: $rwtrim\n";
+            print "  WAS: -> \#$romtpt\n";
+            print "  NOW: ", `/bin/ls -ld $rwtrim`;
+        } elsif ( $rwislink ) {
+            $rwlink = readlink($rw);
+            print "Mountpoint replaced by link: $rwtrim\n";
+            print "  WAS: -> \#$romtpt\n";
+            print "  NOW: $rwlink\n";
+        }
+    } elsif ( $rwismtpt && $roismtpt ) {
+        if ( $rwmtpt ne $romtpt ) {
+            print "Mountpoint change: $rwtrim\n";
+            print "  WAS: -> $romtpt\n";
+            print "  NOW: -> $rwmtpt\n";
+        }
+        $File::Find::prune = 1; return;
+    } elsif ( $rwislink && ! $roexists ) {
         print "New link: $rwtrim\n";  
     } elsif ( $rwislink && ! $roislink ) {
         print "Non-link replaced by link: $rwtrim\n";
-        system("ls -l $rw");
+        $rwlink = readlink($rw);
+        print "  WAS: ", `/bin/ls -ld $ro`;
+        print "  NOW: $rwlink\n";
     } elsif ( $roislink && ! $rwislink ) {
         print "Link replaced by non-link: $rwtrim\n";
-        system("ls -l $ro $rw");
+        $rolink = readlink($ro);
+        print "  WAS: $rolink\n";
+        print "  NOW: ", `/bin/ls -ld $rwtrim`;
     } elsif ( $rwexists && ! $roexists ) {
         print "New: $rwtrim\n";
     } elsif ( $rwisdir ) { # directory, check acl changes
         if ( ($oldacl=`/usr/pubsw/bin/fs listacl $ro|/usr/pubsw/bin/sed '1d'`) ne ($newacl=`/usr/pubsw/bin/fs listacl $rw|/usr/pubsw/bin/sed '1d'`) ) {
             print "ACL changed: $rwtrim\n";
-            print "ACL WAS: $oldacl";
-            print "ACL NOW: $newacl";
+            print "  WAS: $oldacl";
+            print "  NOW: $newacl";
         }
     } else { # not a directory, check changes
         if ( $rwislink && $roislink && ( $rwmtime != $romtime ) ) {
@@ -49,26 +116,61 @@ sub wantedrw {
         }
         elsif ( $rwmtime != $romtime ) {
             print "Changed: $rwtrim\n";
+            $rolsout = `/bin/ls -ld $ro`;
+            $rolsout =~ s/ \S+\s+$//;
+            $rwlsout =  `/bin/ls -ld $rwtrim`;
+            $rwlsout =~ s/ \S+\s+$//;
+            print "  WAS: $rolsout\n";
+            print "  NOW: $rwlsout\n";
             if ($checktext && -T $rw && -T $ro) {
-                system("diff -u $rw $ro");
+                local $_;
+
+                open(DIFFOUT, "/usr/pubsw/bin/diff -u $ro $rw|") 
+                    or die "Can't fork diff: $!\n";
+                while (<DIFFOUT>) {
+                    if ($. <= 2) {
+                        s/(\Q$startrw\E|\Q$startro\E)/.../;
+                    }
+                    print;
+                }
+                close(DIFFOUT);
             }
         }
     }
 }
 
 sub wantedro {
-    $ro=$File::Find::name;
-    $rw=$ro;
+    $ro = $File::Find::name;
+    return if ($ro eq $startro);
+    $rw = $ro;
     $rw =~ s:/afs/ir/:/afs/\.ir/: ;
     ($rotrim = $ro) =~ s/\.stanford\.edu//;
-    ($rwdev,$rwino,$rwmode,$rwlink,$rwuid,$rwgid,$rwrdev,
-     $rwsize,$rwatime,$rwmtime,$rwctime,$rwblksize,$rwblocks) = lstat($rw);
-    $rwexists = (-e _);
-    ($rodev,$roino,$romode,$rolink,$rouid,$rogid,$rordev,
-     $rosize,$roatime,$romtime,$roctime,$roblksize,$roblocks) = lstat($ro);
-    $roislink = (-l _);
-    $roexists = (-e _);
-    if  ( $roislink && ! $rwexists ) {
+
+    $rwmtpt = `/usr/pubsw/bin/fs lsmount $rw  2>&1`;
+    $rwismtpt = ( $? == 0 ) ;
+    $rwmtpt =~ s/.*is a mount point for volume \'\#(\S+)\'/$1/ if $rwismtpt;
+    $romtpt = `/usr/pubsw/bin/fs lsmount $ro  2>&1`;
+    $roismtpt = ( $? == 0 ) ;
+    $romtpt =~ s/.*is a mount point for volume \'\#(\S+)\'/$1/ if $roismtpt;
+    if ( ! $rwismtpt ) {
+        ($rwdev,$rwino,$rwmode,$rwlink,$rwuid,
+         $rwgid,$rwrdev,$rwsize,$rwatime,
+         $rwmtime,$rwctime,$rwblksize,$rwblocks) = lstat($rw);
+    }
+    if ( ! $roismtpt ) {
+        ($rodev,$roino,$romode,$rolink,$rouid,
+         $rogid,$rordev,$rosize,$roatime,
+         $romtime,$roctime,$roblksize,$roblocks) = lstat($ro);
+        $roislink = (-l _);
+        $roexists = (-e _);
+    }
+
+    if ( $roismtpt ) {
+        if ( ! $rwismtpt && ! $rwexists ) {
+            print "Deleted mountpoint: $rotrim -> \#$romtpt\n";
+        }
+        $File::Find::prune = 1; return;
+    } elsif  ( $roislink && ! $rwexists ) {
         print "Deleted link: $rotrim\n" ;
     } elsif ( $roexists && ! $rwexists ) {
         print "Deleted: $rotrim\n" ;
