@@ -1,4 +1,4 @@
-#!/usr/local/bin/perl -w
+#!/usr/bin/perl -w
 $version = q$Id$;
 #
 # frak - Show changes between two software trees
@@ -70,6 +70,7 @@ use vars qw($argc $maxdifflines $rw $ro $startrw $startro
             $rwmodeoctal $romodeoctal
             $newloc $oldloc $newacl $oldacl
 	    $fs
+            $version
            );
 
 $fs = '/usr/pubsw/bin/fs';
