@@ -8,6 +8,9 @@ $ID = q$Id$;
 # Copyright 1998, 1999, 2000, 2002
 #     Board of Trustees, Leland Stanford Jr. University
 #
+# This program is free software; you may redistribute it and/or modify it
+# under the same terms as Perl itself.
+#
 # Creates a new AFS volume on the given server and partition and mounts it
 # in the file system, setting default ACLs if appropriate.  It then calls
 # loadmtpt to update the mount point database.
@@ -16,43 +19,179 @@ $ID = q$Id$;
 # Modules and declarations
 ##############################################################################
 
+# The path to a file containing a list of current AFS servers and their volume
+# types.  Each line should start with an AFS server name and then optionally
+# contain a space-separated list of types of volumes handled by that server.
+# Those volume types may begin with a single letter and a colon, indicating
+# that only the partition named by that letter handles that type of volume.
+$SERVERS = '/afs/ir/service/afs/data/serverlist.types';
+
 require 5.001;
 
 use strict;
-use vars qw($ID);
+use vars qw($ID $JUSTPRINT $SERVERS);
+use subs qw(system);
+
+use Getopt::Long qw(GetOptions);
+
+##############################################################################
+# Overrides
+##############################################################################
+
+# We override system to honor the global $JUSTPRINT variable.  It otherwise
+# works the same way as system normally does.
+sub system {
+    if ($JUSTPRINT) {
+        print "@_\n";
+        return 0;
+    } else {
+        return CORE::system (@_);
+    }
+}
 
 ##############################################################################
 # AFS information
 ##############################################################################
 
-# Given a server name and a partition, fully qualify both and return them as a
-# list of ($server, $partition).  Accepts - as the partition to pick the least
-# loaded partition on that server, or a list of letters or letter ranges to
-# pick the least loaded of the partitions on the server from that range.
-sub findpartition {
-    my ($server, $part) = @_;
-    $server = 'afssvr' . $server if ($server =~ /^\d+$/);
-    if ($part eq '.' || (length ($part) > 1 && $part =~ /^[a-z-]+$/)) {
+# Given a list of server name and partition pairs, fully qualify each and
+# return them as a list of similar pairs, ordered by whichever partition has
+# the most percentage free space.  If ., a list of letters, or letter ranges
+# are given for the partition, pick the partition from that set that has the
+# most free space.
+sub find_targets {
+    my @locations = @_;
+    my @results;
+    while (@locations) {
+        my $server = shift @locations;
+        my $part = shift @locations;
+
+        $server = 'afssvr' . $server if ($server =~ /^\d+$/);
         $part = 'a-z' if $part eq '.';
         open (INFO, "vos partinfo $server |") or die "$0: can't fork: $!\n";
         my @free;
         local $_;
         while (<INFO>) {
-            if (m%^Free space on partition (/vicep[$part]): (\d+) K %) {
-                push (@free, [ $1, $2 ]);
+            if (m(^Free\ space\ on\ partition\ (/vicep[$part]):\ (\d+)\ K
+                  \ blocks\ out\ of\ total\ (\d+)\s*\z)x) {
+                push (@free, [ $1, $2, $2 / $3 ]);
             } elsif (m%^Free space on partition (/vicep.)%) {
                 next;
             } else {
                 die "$0: vos partinfo said $_\n";
             }
         }
+        close INFO;
+        if (!@free) { die "$0: no partition matching $part on $server\n" }
         @free = sort { $$b[1] <=> $$a[1] } @free;
-        $part = $free[0][0];
-    } else {
-        $part =~ s%^(?:/?vicep)?%/vicep%;
+        push (@results, [ $server, $free[0][0], $free[0][2] ]);
     }
-    die "$0: invalid partition $part\n" if ($part !~ m%^/vicep[a-z]$%);
-    return ($server, $part);
+    @results = sort { $$b[2] <=> $$a[2] } @results;
+    return map { ($$_[0], $$_[1]) } @results;
+}
+
+# Given a volume type and an optional second argument specifying whether we're
+# creating a read/write or read-only version of a replicated volume, look
+# through the types file and find appropriate servers and partitions to use.
+# Returns a list of server and partition pairs suitable for being passed to
+# find_targets to find the best servers.
+sub find_servers {
+    my ($type, $class) = @_;
+    if ($class) { $type .= "-$class" }
+    my @locations;
+    open (SERVERS, $SERVERS) or die "$0: can't open $SERVERS: $!\n";
+    local $_;
+    while (<SERVERS>) {
+        my ($server, @rules) = split;
+        for (@rules) {
+            my ($part, $allowed);
+            if (/:/) {
+                ($part, $allowed) = split ':';
+            } else {
+                $part = 'a-z';
+                $allowed = $_;
+            }
+            if ($allowed eq $type) {
+                push (@locations, $server, $part);
+            }
+        }
+    }
+    close SERVERS;
+    if (!@locations) {
+        die "$0: no servers found for type $type\n";
+    }
+    return @locations;
+}
+
+##############################################################################
+# AFS operations
+##############################################################################
+
+# Create a volume, given the server, partition, volume name, and quota.  Dies
+# on a failure to create the volume.
+sub volume_create {
+    my ($server, $partition, $volume, $quota) = @_;
+    system ('/usr/pubsw/bin/vos', 'create', $server, $partition, $volume,
+            $quota * 1000) == 0
+        or die 'Failed to create volume (status ', ($? >> 8), ")\n";
+}
+
+# Mount the volume, chmod it to 755 since AFS creates it 777, and load the
+# mount point into the database.  chmod the root of the volume to 755 since
+# AFS creates it 777.  Use /usr/afsws/bin/fs to avoid the wrapper.
+sub volume_mount {
+    my ($volume, $mtpt) = @_;
+    system ('/usr/afsws/bin/fs', 'mkm', $mtpt, $volume) == 0
+        or die 'Failed to make mount point (status ', ($? >> 8), ")\n";
+    if ($JUSTPRINT) {
+        print "chmod 755 $mtpt\n";
+    } else {
+        chmod (0755, $mtpt) or warn "Failed to chmod root: $!\n";
+    }
+    system ('/afs/ir/service/afs/scripts/loadmtpt', $mtpt) == 0
+        or warn 'Failed to load mountpoint (status ', ($? >> 8), ")\n";
+}
+
+# Set the ACLs of the volume appropriately.  Some volumes have their own
+# particular ACL conventions; take care of those here as well.
+sub volume_setacls {
+    my ($volume, $mtpt, @acls) = @_;
+
+    # Append system:backup rl on ACL list to allow ADSM backups.
+    push (@acls, 'system:backup', 'rl');
+
+    # Append ACLs for groups and departments if necessary
+    if ($volume =~ /^(?:group|dept)\./) {
+        push (@acls, 'system:anyuser', 'rl');
+        push (@acls, 'system:dept-admin', 'all');
+    }
+
+    # Create the correct ACLs for pubsw volumes.
+    if ($volume =~ /^(?:pubsw|sweet)\./) {
+        push (@acls, 'system:administrators', 'none');
+        push (@acls, 'cvs-committers:pubsw', 'all');
+    }
+
+    # Actually set the ACLs.
+    system ('/usr/afsws/bin/fs', 'setacl', $mtpt, @acls) == 0
+        or warn 'Failed to set acls (status ', ($? >> 8), ")\n";
+}
+
+# Given the volume name and then a list of server and partition pairs, create
+# the replicas for a replicated volume and then release it.  The list of
+# server and partition pairs must include the location of the read/write
+# volume for the first replica.
+sub volume_replicate {
+    my ($volume, @locations) = @_;
+    while (@locations) {
+        my $server = shift @locations;
+        my $partition = shift @locations;
+        system ('/usr/pubsw/bin/vos', 'addsite', $server, $partition,
+                $volume) == 0
+            or die "Failed to replicate volume to $server $partition",
+                ' (status ', ($? >> 8), ")\n";
+    }
+    system ('/usr/pubsw/bin/vos', 'release', '-f', $volume) == 0
+        or die 'Failed to release volume (status ', ($? >> 8), ")\n";
 }
 
 ##############################################################################
@@ -65,59 +204,75 @@ $0 =~ s%.*/%%;
 
 # Parse command line options.  We do allow an odd number of arguments for
 # ACLs, in order to allow things like -clear.
-if (@ARGV && $ARGV[0] =~ /^-.*h/) {
+my ($help, $replicas, $type, $version);
+Getopt::Long::config ('bundling', 'no_ignore_case', 'require_order');
+GetOptions ('dry-run|just-print|n' => \$JUSTPRINT,
+            'help|h'               => \$help,
+            'replicas|r=i'         => \$replicas,
+            'type|t=s'             => \$type,
+            'version|v'            => \$version) or exit 1;
+if ($help) {
     print "Feeding myself to perldoc, please wait....\n";
-    exec ('perldoc', '-t', $fullpath) or die "$0: can't fork: $!\n";
-} elsif (@ARGV && $ARGV[0] =~ /^-.*v/) {
-    my $version = join (' ', (split (' ', $ID))[1,2]);
+    exec ('perldoc', '-t', $0) or die "Cannot fork: $!\n";
+} elsif ($version) {
+    my $version = join (' ', (split (' ', $ID))[1..3]);
     $version =~ s/,v\b//;
-    die $version, "\n";
+    $version =~ s/(\S+)$/($1)/;
+    print $version, "\n";
+    exit 0;
 }
-die "Usage: volcreate server partition volname quota mtpt [acls]\n" 
-    if (@ARGV < 5);
-my ($server, $partition, $volume, $quota, $mtpt, @acls) = @ARGV;
+if ($replicas && !$type) { die "-r option given without -t option\n" }
+
+# Fill in the various information that we need.
+my ($server, $partition, $volume, $quota, $mtpt, @acls);
+if ($type) {
+    die "Usage: volcreate -t type volname quota mountpoint [acls]\n"
+        if @ARGV < 3;
+    ($volume, $quota, $mtpt, @acls) = @ARGV;
+} else {
+    die "Usage: volcreate server partition volname quota mtpt [acls]\n"
+        if (@ARGV < 5);
+    my ($server, $partition, $volume, $quota, $mtpt, @acls) = @ARGV;
+}
 
 # Because we're loading the mount point database, we need the mount point
-# specified in the correct fashion.
+# specified in the correct fashion.  This also catches most of the cases of
+# missing an argument or getting the arguments in the wrong order.
 die "Mount point must begin with /afs/.ir/\n" unless $mtpt =~ m%^/afs/.ir/%;
 
 # fs mkm doesn't like trailing slashes on the mount point, and neither does
 # the mount point database.
 $mtpt =~ s%/+$%%;
 
-# Canonify AFS server name and find the exact partition.
-($server, $partition) = findpartition ($server, $partition);
-die "$server is not an afs server.\n" unless $server =~ /^afssvr\d+$/;
-
-# Append system:backup rl on ACL list to allow ADSM backups.
-push (@acls, 'system:backup', 'rl');
-
-# Append acl's for groups and departments if necessary
-if ($volume =~ /^(?:group|dept)\./) {
-    push (@acls, 'system:anyuser', 'rl');
-    push (@acls, 'system:dept-admin', 'all');
+# Canonify AFS server name and find the exact partition on which to create the
+# read/write volume.
+if ($type) {
+    ($server, $partition) = find_servers ($type, $replicas > 0 ? 'rw' : '');
 }
+($server, $partition) = find_targets ($server, $partition);
 
-# Create the volume and mount it.  Set ACLs if we were given any, and then
-# chmod the root of the volume to 755 since AFS creates it 777.  Use
-# /usr/afsws/bin/fs to avoid the wrapper, which doesn't like us fiddling with
-# the system:backup ACL.
-system ('/usr/pubsw/bin/vos', 'create', $server, $partition, $volume,
-        $quota * 1000) == 0
-    or die 'Failed to create volume (status ', ($? >> 8), ")\n";
-system ('/usr/afsws/bin/fs', 'mkm', $mtpt, $volume) == 0
-    or die 'Failed to make mount point (status ', ($? >> 8), ")\n";
-system ('/usr/afsws/bin/fs', 'setacl', $mtpt, @acls) == 0
-    or warn 'Failed to set acls (status ', ($? >> 8), ")\n";
-chmod (0755, $mtpt) or warn "Failed to chmod root: $!\n";
-system ('/afs/ir/service/afs/scripts/loadmtpt', $mtpt) == 0
-    or warn 'Failed to load mountpoint (status ', ($? >> 8), ")\n";
+# Do the work of creating and mounting the read/write volume.
+volume_create ($server, $partition, $volume, $quota);
+volume_mount ($volume, $mtpt);
+volume_setacls ($volume, $mtpt, @acls);
 
+# If the volume is replicated, take care of creating and releasing the
+# replicas now that the ACL is set correctly.
+if ($replicas > 0) {
+    my @locations = ($server, $partition);
+    if ($replicas > 1) {
+        my @servers = find_servers ($type, 'ro');
+        my $range = ($replicas * 2) - 3;
+        push (@locations, (find_targets @servers)[0 .. $range]);
+    }
+    volume_replicate ($volume, @locations);
+}
+exit 0;
 __END__
 
-############################################################################
+##############################################################################
 # Documentation
-############################################################################
+##############################################################################
 
 =head1 NAME
 
@@ -125,8 +280,11 @@ volcreate - Create and mount a new AFS volume
 
 =head1 SYNOPSIS
 
-B<volcreate> [B<-hv>] I<server> I<part> I<volume> I<quota> I<mount>
+B<volcreate> [B<-hvn>] I<server> I<part> I<volume> I<quota> I<mount>
 [I<acl> ...]
+
+B<volcreate> [B<-hvn>] B<-t> I<type> [B<-r> I<replicas>] I<volume> I<quota>
+I<mount> [I<acl> ...]
 
 =head1 DESCRIPTION
 
@@ -148,11 +306,27 @@ ranges such as C<ace-gm>, in which case the partition of the set specified
 with the most free space is chosen.  (In this example, the set is /vicepa,
 /vicepc, /vicepe through /vicepg, or /vicepm on the given sever.)
 
+Alternately, rather than giving a server and partition, B<volcreate> accepts
+the B<-t> option to specify a volume type.  If this option is given, no
+server or partition is necessary and B<volcreate> will instead place the
+volume on an appropriate server by finding the partition with the most
+percentage space free of the available servers for that volume type.  When
+B<-t> is given, B<-r> may also be given to specify a number of replicas if a
+replicated volume is being created.
+
 I<volume> is the name of the volume to create.  I<quota> is its quota in
 megabytes (B<not> in kilobytes).  I<mount> is the full path to the intended
 mount location of the volume (this must begin with "/afs/.ir/" so that the
 mount point database remains consistent).  I<acl> is any normal ACL
 arguments to C<fs setacl>.
+
+For some types of volumes, some ACLs will be set automatically.  For volumes
+beginning with C<group.> or C<dept.>, system:anyuser read and
+system:dept-admin all will be added.  For volumes beginning with C<pubsw.>
+or C<sweet.>, system:administrators access will be removed, and
+cvs-committers:pubsw all access will be added.  (The appropriate access for
+users will also have to be added.)  In addition, for all volumes,
+system:backup read will be added to the ACLs.
 
 =head1 OPTIONS
 
@@ -162,6 +336,26 @@ arguments to C<fs setacl>.
 
 Print out this documentation (which is done simply by feeding the script
 to C<perldoc -t>).
+
+=item B<-n>, B<--dry-run>, B<--just-print>
+
+Don't run any commands, just print out what would have been done.
+
+=item B<-r> I<replicas>, B<--replicas>=I<replicas>
+
+The number of replicas for the volume.  Use of this option indicates that
+the volume is replicated, and it will be replicated at a number of sites
+equal to the I<replicas> value.  The first replica will always be on the
+same server and partition as the read/write volume; the rest will be chosen
+from the servers that hold read-only replicas for that volume type.  B<-t>
+must be given if this option is used.
+
+=item B<-t> I<type>, B<--type>=I<type>
+
+Create a volume of the specified type.  When this option is used, no server
+or partition should be specified, and instead B<volcreate> will find all the
+servers that can store that volume type and pick the server and partition
+with the most percentage space free.  This option is required to use B<-r>.
 
 =item B<-v>, B<--version>
 
@@ -174,18 +368,45 @@ Print out the version of B<volcreate> and quit.
 Create the volume ls.mail.logs on afssvr14 /vicepa with a quota of 20MB and
 mount it on /afs/.ir/site/leland/mail/logs:
 
-  volcreate afssvr14 a ls.mail.logs 20 /afs/.ir/site/leland/mail/logs
+    volcreate afssvr14 a ls.mail.logs 20 /afs/.ir/site/leland/mail/logs
 
 Create ls.trip.nntp on afssvr3 /vicepc with a quota of 5MB and mount it on
 /afs/.ir/site/leland/tripwire/nntp.Stanford.EDU.  Set a default ACL only
 giving system:localhosts read access and rra all access.
 
-  volcreate 3 c ls.trip.nntp 5 \
-      /afs/.ir/site/leland/tripwire/nntp.Stanford.EDU \
-      -clear system:localhosts read rra all
+    volcreate 3 c ls.trip.nntp 5 \
+        /afs/.ir/site/leland/tripwire/nntp.Stanford.EDU \
+        -clear system:localhosts read rra all
 
 (this should all be typed on one line).  Note that C<fs setacl> flags like
 -clear are allowed.
+
+Create a replicated volume with three replicas of type pubsw named
+pubsw.byacc19 with a quota of 20MB and mount it at
+/afs/.ir/pubsw/Languages/byacc-1.9.
+
+    volcreate -t pubsw -r 3 pubsw.byacc19 20 \
+        /afs/.ir/pubsw/Langauges/byacc-1.9
+
+The correct ACLs for a pubsw volume will be set automatically.
+
+=head1 FILES
+
+=over 4
+
+=item F</afs/ir/service/afs/data/serverlist.types>
+
+The default path to a file containing a list of current AFS servers and
+their volume types.  Each line should start with an AFS server name and then
+optionally contain a space-separated list of types of volumes handled by
+that server.  Those volume types may begin with a single letter and a colon,
+indicating that only the partition named by that letter handles that type of
+volume.
+
+For non-replicated volumes, the type in this file should match the type
+given to B<volcreate>.  For replicated volumes, the type suffixed with
+C<-rw> will be used for the read/write volume and the type suffixed with
+C<-ro> will be used for the read-only volumes.
 
 =head1 SEE ALSO
 
@@ -194,5 +415,13 @@ L<vos_create(1)>, L<fs_mkmount(1)>, L<fs_setquota(1)>, L<fs_setacl(1)>
 =head1 AUTHORS
 
 Neil Crellin <neilc@stanford.edu> and Russ Allbery <rra@stanford.edu>.
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 1998, 1999, 2000, 2002 Board of Trustees, Leland Stanford
+Jr. University.
+
+This program is free software; you may redistribute it and/or modify it
+under the same terms as Perl itself.
 
 =cut
