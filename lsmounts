@@ -128,7 +128,7 @@ sub check {
 # If we're recursive, take @ARGV as a list of directories to recurse into.
 # Otherwise, take it as a list of directories and files to test.
 @ARGV = ('.') unless @ARGV;
-if ($recurse) {
+if ($recurse || $deep) {
     $File::Find::dont_use_nlink = 1;
     find (sub { check ($_, $File::Find::name) }, @ARGV);
 } else {
@@ -139,12 +139,7 @@ if ($recurse) {
         closedir D;
         @files;
     } @ARGV;
-    if ($deep) {
-        $File::Find::dont_use_nlink = 1;
-        find (sub { check ($_, $File::Find::name) }, @ARGV);
-    } else {
-        for (@ARGV) { check $_ }
-    }
+    for (@ARGV) { check $_ }
 }
 
 __END__
