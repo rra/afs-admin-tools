@@ -803,7 +803,7 @@ frak - Show changes between two AFS trees
 
 =head1 SYNOPSIS
 
-frak [B<-CDhLmqsv] [B<-c> I<changedir>] [B<-d> I<max-diff-lines>] [B<-l>
+frak [B<-CDhLmqsv>] [B<-c> I<changedir>] [B<-d> I<max-diff-lines>] [B<-l>
 I<logfile>] (I<volume> | I<rw-path> [ I<ro-path> ])
 
 =head1 DESCRIPTION
