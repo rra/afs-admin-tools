@@ -246,11 +246,11 @@ fsr - Recursively applies AFS "fs" commands to subdirectories.
 
 =head1 SYNOPSIS
 
-fsr [-h] [-v]
+fsr [B<-h>] [B<-v>]
 
-fsr [-V] [-m] [-M] I<fs-subcommand syntax>
+fsr [B<-V>] [B<-m>] [B<-M>] I<fs-subcommand syntax>
 
-=head1 SUPPORTED C<fs> SUBCOMMANDS
+=head1 SUPPORTED fs SUBCOMMANDS
 
 cleanacl, copyacl/ca, listacl/la, listquota/lq, lsmount, setacl/sa,
 setquota/sq, whereis
