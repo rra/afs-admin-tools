@@ -1,0 +1,9 @@
+#!/usr/local/bin/perl
+$rw=$ARGV[0];
+$ro=$rw;
+$ro =~ s:/afs/.ir.stanford.edu/:/afs/ir/: ;
+
+print `find $rw -exec frak.rw {} \\;`;
+print "\n";
+print `find $ro -exec frak.ro {} \\;`;
+print "\n";
