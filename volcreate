@@ -244,7 +244,7 @@ if ($type) {
 } else {
     die "Usage: volcreate server partition volname quota mtpt [acls]\n"
         if (@ARGV < 5);
-    my ($server, $partition, $volume, $quota, $mtpt, @acls) = @ARGV;
+    ($server, $partition, $volume, $quota, $mtpt, @acls) = @ARGV;
 }
 
 # Because we're loading the mount point database, we need the mount point
@@ -270,7 +270,7 @@ volume_setacls ($volume, $mtpt, @acls);
 
 # If the volume is replicated, take care of creating and releasing the
 # replicas now that the ACL is set correctly.
-if ($replicas > 0) {
+if ($replicas && $replicas > 0) {
     my @locations = ($server, $partition);
     if ($replicas > 1) {
         my @servers = find_servers ($type, 'ro');
