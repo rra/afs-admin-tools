@@ -128,6 +128,8 @@ sub find_best_normal {
     open (SERVERS, $SERVERS) or die "$0: can't open $SERVERS: $!\n";
     local $_;
     while (<SERVERS>) {
+        next if /^\s*$/;
+        next if /^\s*\#/;
         my ($server, @rules) = split;
         shift @rules if ($rules[0] =~ /^\[.*\]$/);
         my $parts = '';
@@ -167,6 +169,8 @@ sub find_best_replicated {
     open (SERVERS, $SERVERS) or die "$0: can't open $SERVERS: $!\n";
     local $_;
     while (<SERVERS>) {
+        next if /^\s*$/;
+        next if /^\s*\#/;
         my ($server, @rules) = split;
         my $site;
         if ($rules[0] =~ /^\[(.*)\]$/) {
@@ -605,6 +609,8 @@ optionally contain a space-separated list of types of volumes handled by
 that server.  Those volume types may begin with a single letter or range of
 letters and a colon, indicating that only the partition or partitions named
 handle that type of volume.
+
+Blank lines and lines beginning with C<#> are ignored.
 
 For non-replicated volumes, the type in this file should match the type
 given to B<volcreate>.  For replicated volumes, the type suffixed with
