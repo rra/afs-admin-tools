@@ -79,7 +79,7 @@ sub find_targets {
 
         $server = 'afssvr' . $server if ($server =~ /^\d+$/);
         $part = 'a-z' if $part eq '.';
-        open (INFO, "vos partinfo $server |") or die "$0: can't fork: $!\n";
+        open (INFO, "/usr/pubsw/bin/vos partinfo $server |") or die "$0: can't fork: $!\n";
         my @free;
         local $_;
         while (<INFO>) {
