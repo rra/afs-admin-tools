@@ -4,7 +4,10 @@ $ID = q$Id$;
 # volnuke -- Delete a volume, tracking down what servers it's on.
 #
 # Written by Russ Allbery <rra@stanford.edu>
-# Copyright 2002, 2003 Board of Trustees, Leland Stanford Jr. University
+# Copyright 2002, 2003, 2004 Board of Trustees, Leland Stanford Jr. University
+#
+# This program is free software; you may redistribute it and/or modify it
+# under the same terms as Perl itself.
 #
 # A smart and dangerous vos remove, but one that prompts you to be sure you're
 # doing what you intend.  Deletes a volume without having to know the volume's
@@ -321,6 +324,14 @@ fs_lsmount(1), vos(1), vos_examine(1), vos_remove(1)
 
 =head1 AUTHOR
 
-Russ Allbery <rra@stanford.edu>.
+Russ Allbery <rra@stanford.edu>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 2002, 2003, 2004 Board of Trustees, Leland Stanford Jr.
+University.
+
+This program is free software; you may redistribute it and/or modify it
+under the same terms as Perl itself.
 
 =cut
