@@ -33,6 +33,10 @@ if (@ARGV && $ARGV[0] =~ /^-.*h/) {
 die "Usage: volcreate server partition volname quota mtpt [acls]\n" 
     if (@ARGV < 5);
 my ($server, $partition, $volume, $quota, $mtpt, @acls) = @ARGV;
+#
+# Append system:backup rl on ACL list, so the volume can be backedup 
+# by ADSM.
+push @acls, 'system:backup', 'rl';
 
 # Because we're loading the mount point database, we need the mount point
 # specified in the correct fashion.
@@ -57,6 +61,7 @@ if (@acls) {
     system ('/usr/pubsw/bin/fs', 'setacl', $mtpt, @acls) == 0
         or warn 'Failed to set acls (status ', ($? >> 8), ")\n";
 }
+
 chmod (0755, $mtpt) or warn "Failed to chmod root: $!\n";
 system ('/afs/ir/site/leland/afs/scripts/loadmtpt', $mtpt) == 0 
     or warn 'Failed to load mountpoint (status ', ($? >> 8), ")\n"; 
