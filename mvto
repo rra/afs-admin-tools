@@ -78,7 +78,7 @@ my $toserver = shift;
 my $topart = shift;
 $toserver = 'afssvr' . $toserver if ($toserver =~ /^\d+$/);
 $topart = '/vicep' . $topart unless ($topart =~ m%^/vicep%);
-die "$0: invalid partition $topart\n" if ($topart !~ m%^/vicep[a-z]$%);
+die "$0: invalid partition $topart\n" if ($topart !~ m%^/vicep[a-z]+$%);
 if ($rwserver eq $toserver) {
     print "$volume is already on $rwserver $rwpart\n";
     if ($ro{$rwserver}) {
@@ -109,7 +109,7 @@ while (@ARGV) {
     my ($server, $part) = splice (@ARGV, 0, 2);
     $server = 'afssvr' . $server if ($server =~ /^\d+$/);
     $part = '/vicep' . $part unless ($part =~ m%^/vicep%);
-    die "$0: invalid partition $part\n" if ($part !~ m%^/vicep[a-z]$%);
+    die "$0: invalid partition $part\n" if ($part !~ m%^/vicep[a-z]+$%);
     if ($ro{$server}) {
         print "$volume is already on $server $ro{$server}\n";
         delete $ro{$server};
