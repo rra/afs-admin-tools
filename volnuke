@@ -13,11 +13,18 @@ $ID = q$Id$;
 # that none of the replicas have been accessed.
 
 ##############################################################################
+# Site configuration
+##############################################################################
+
+# The full path to the list of volumes awaiting ADSM deletion.
+$NUKELIST       = '/afs/ir/service/afs/data/adsm-delete';
+
+##############################################################################
 # Modules and declarations
 ##############################################################################
 
 use strict;
-use vars qw($ID);
+use vars qw($ID $NUKELIST);
 
 use Date::Parse qw(str2time);
 use Getopt::Long qw(GetOptions);
@@ -124,6 +131,7 @@ if ($help) {
     $version =~ s/(\S+)$/($1)/;
     die $version, "\n";
 }
+$file = $NUKELIST unless $file;
 
 # Volume name or mount point is always the first argument.  Pull it off and
 # figure out where this volume is.
@@ -232,7 +240,8 @@ is here solely for sysctl/remctl backend scripts.
 =item B<-f> I<list-file>, B<--file>=I<list-file>
 
 Append the name of the deleted volume to the given file.  This is used to
-accumulate a list of volumes to purge from backups.
+accumulate a list of volumes to purge from backups.  If no file is given, it
+defaults to F</afs/ir/service/afs/data/adsm-delete>.
 
 =item B<-h>, B<--help>
 
@@ -264,6 +273,18 @@ Delete the volume ls.trip.windlord:
 
 The user will be prompted to confirm the action, and possibly prompted again
 if the volume is replicated and the read-only replicas have accesses.
+
+=head1 FILES
+
+=over 4
+
+=item F</afs/ir/service/afs/data/adsm-delete>
+
+Where the names of deleted volumes are saved so that they can also be purged
+from ADSM.  This path can be overridden with the B<-f> option and changed at
+the top of this script.
+
+=back
 
 =head1 SEE ALSO
 
