@@ -8,7 +8,12 @@ $argc = @ARGV;
 die "Too many arguments: frak rw [ro]\n" if ($argc > 2);
 
 $rw = $ARGV[0];
-$ro = $rw;
+if ( $argc == 1 && length($rw) >= 7 && substr($rw,0,7) eq '/afs/ir' ) {
+    warn "RW path argument specified RO syntax, autocorrecting\n";
+    substr($rw,0,7) = "/afs/.ir";
+}
+
+$ro = ( $argc == 2 ? $ARGV[1] : $rw ) ;
 $ro =~ s:/afs/\.ir\.stanford\.edu/:/afs/ir/: ;
 
 $startrw = $rw;
