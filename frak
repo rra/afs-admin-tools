@@ -4,6 +4,7 @@ require 5.003; # I prototype a sub below.
 
 use File::Find;
 use Date::Format;
+use Carp;
 
 # Mode masks from /usr/include/sys/stat.h
 
@@ -99,6 +100,7 @@ sub modestr ($) {
     my ($mode) = @_;
     my $outstr = "?---------";
 
+#print "mode=:",$mode, ":\n";
     if (($mode & $S_IFMT) == $S_IFDIR) { substr($outstr,0,1) = "d"; }
     elsif (($mode & $S_IFMT) == $S_IFLNK) { substr($outstr,0,1) = "l"; }
     elsif (($mode & $S_IFMT) == $S_IFBLK) { substr($outstr,0,1) = "b"; }
@@ -117,16 +119,16 @@ sub modestr ($) {
     if (($mode & $S_IAMB) & $S_IWOTH) { substr($outstr,8,1) = "w" }
     if (($mode & $S_IAMB) & $S_IXOTH) { substr($outstr,9,1) = "x" }
     
-    if (($mode & $S_IAMB) & $S_ISUID) {
-        if (($mode & $S_IAMB) & $S_IXUSR) { substr($outstr,3,1) = "s" }
+    if ($mode & $S_ISUID) {
+        if ($mode & $S_IXUSR) { substr($outstr,3,1) = "s" }
         else { substr($outstr,3,1) = "S" }
     }
-    if (($mode & $S_IAMB) & $S_ISGID) {
-        if (($mode & $S_IAMB) & $S_IXGRP) { substr($outstr,6,1) = "s" }
+    if ($mode & $S_ISGID) {
+        if ($mode & $S_IXGRP) { substr($outstr,6,1) = "s" }
         else { substr($outstr,6,1) = "S" }
     }
-    if (($mode & $S_IAMB) & $S_ISVTX) {
-        if (($mode & $S_IAMB) & $S_IXOTH) { substr($outstr,9,1) = "t" }
+    if ($mode & $S_ISVTX) {
+        if ($mode & $S_IXOTH) { substr($outstr,9,1) = "t" }
         else { substr($outstr,3,1) = "T" }
     }
 
@@ -136,6 +138,8 @@ sub modestr ($) {
 sub lslout ($$$$$$$) {
     my ($mode, $link, $uid, $gid, $size, $mtime, $nodate) = @_;
     my $output;
+confess if "$mode" eq "";
+#print "lsloutmode=:",$mode,":\n";
     my $modestr = modestr($mode);
     my $username = getpwuid($uid) || $uid;
     my $grname = getgrgid($gid) || $gid;
