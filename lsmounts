@@ -1,0 +1,17 @@
+#!/usr/bin/perl
+
+use Cwd;
+
+opendir(DIR,cwd()) or die "Can't open cwd: $!\n";
+while (defined($_ = readdir(DIR))) {
+    lstat($_);
+    if (-d _) {
+        $mtpt = `/usr/pubsw/bin/fs lsmount $_ 2>&1`;
+        $ismtpt = ($? == 0);
+        if ( $ismtpt ) {
+            $mtpt =~ s/.*a mount point for volume \'\#(\S+)\'\s+$/$1/ ;
+            print $mtpt, "\n";
+        }
+    }
+}
+closedir(DIR);
