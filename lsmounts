@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-$ID = $Id$;
+$ID = q$Id$;
 #
 # lsmounts -- List volumes which have mountpoints in directory.
 
