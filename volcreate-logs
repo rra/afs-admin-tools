@@ -89,7 +89,7 @@ sub check_quota {
         return;
     }
     my ($volname, $quota, $used, $percent) = split (' ', $listquota[0]);
-    unless ($percent =~ s/%$//) {
+    unless ($percent =~ s/%(<<)?$//) {
         warn "Unable to parse: $listquota[0]";
         warn "Unable to get quota information for $volume\n";
         return;
@@ -335,3 +335,137 @@ for my $config (@config) {
         }
     }
 }
+
+__END__
+
+##############################################################################
+# Documentation
+##############################################################################
+
+=head1 NAME
+
+make-log-volumes - Manage AFS log volumes.
+
+=head1 SYNOPSIS
+
+B<make-log-volumes> [B<-hmnv>]
+
+=head1 DESCRIPTION
+
+This program maintains the size and existence of log volumes in AFS,
+creating new ones for upcoming months or years as necessary and increasing
+their quota as necessary if they're getting too full.  It reports all of its
+actions, by default to standard out but optionally through mail with the
+B<-m> option.
+
+The rules for each set of log volumes are defined in the program
+configuration file, in F</afs/ir/service/afs/data/log-volumes> by default.
+It uses B<volcreate> to create all new log volumes, and therefore initial
+ACLs for new log volumes can be set using B<volcreate>'s ACL handling
+capabilities.  See L<volcreate(1)> for more information.
+
+In order to use B<make-log-volumes> to manage a set of volumes, the volumes
+must use standard directory structure and naming conventions.  This means
+that under some root log directory, volumes must be organized like:
+
+    ROOT/<year>/<month>
+
+where <year> is the four-digit year and <month> is the two-digit month (with
+zero-padding where necessary).  If there is a separate volume for each
+month, those volumes are mounted at locations that look like the above; if
+there is only a single volume for each year's worth of logs, that volume is
+mounted at ROOT/<year> and will have subdirectories for each month created
+automatically.  The log volumes are named C<logs.service.YYYYMM> where
+C<service> is some string representing the service being logged and
+C<YYYYMM> is the four-digit year and two-digit month.  If the volume only
+holds logs for one year, the volume will end with C<YYYY> instead.
+
+New volumes will be created for the following month on any date after the
+twentieth of the month (log volumes will only be created if the appropriate
+directory does not already exist).  Existing log volumes will have their
+quota and usage checked.  If the quota is under the configured size, it will
+be increased to match.  If the usage is over 90%, the volume quota will be
+increased by 10%, rounded up to the nearest 10MB.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-h>, B<--help>
+
+Print out this documentation (which is done simply by feeding the script to
+C<perldoc -t>).
+
+=item B<-m>, B<--mail>
+
+Report via e-mail rather than to standard out.  Sends an e-mail report to
+afs-reports@stanford.edu (configured at the top of this program).
+
+=item B<-n>, B<--dry-run>, B<--just-print>
+
+Don't take any action other than inspection.  Instead, just print to
+standard out each command that would be executed.
+
+=item B<-v>, B<--version>
+
+Print out the version of B<make-log-volumes> and exit.
+
+=back
+
+=head1 EXAMPLES
+
+Process all of the current rules, reporting actions to standard out.
+
+    make-log-volumes
+
+Do the same, but instead send the report via e-mail.
+
+    make-log-volumes -m
+
+Check to see what needs to be done, but don't actually do it.  Instead, just
+print the commands that would be executed to standard out:
+
+    make-log-volumes -n
+
+=head1 FILES
+
+=over 4
+
+=item F</afs/ir/service/afs/data/log-volumes>
+
+This file specifies the collections of log volumes managed by the script
+make-log-volumes, which runs on lsdb nightly and increases quota or creates
+new log volumes as needed.  The syntax must look like:
+
+    log {
+        name: <volume-name>
+        path: <base-path>
+        type: monthly | yearly
+        quota: <quota>
+    }
+
+where <volume-name> is the base name of the volume (.YYYY or .YYYYMM will be
+appended), <base-path> is the root of the log structure (its immediate
+subdirectories must be the year directories), type is either montly to
+create a new volume for each month or yearly to create one volume for each
+year of logs, and <quota> is the starting quota for each volume in MB.
+
+=item F</afs/ir/service/afs/scripts/volcreate>
+
+Used to create volumes.  B<make-log-volumes> assumes that B<volcreate> has
+been configured to set the appropriate initial ACLs for the volumes.
+
+=back
+
+=head1 SEE ALSO
+
+L<newsyslog(1)>, L<volcreate(1)>
+
+The current version of newsyslog is available from its web site at
+L<http://www.eyrie.org/~eagle/software/newsyslog/>.
+
+=head1 AUTHOR
+
+Russ Allbery <rra@stanford.edu>
+
+=cut
