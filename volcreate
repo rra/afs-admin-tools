@@ -183,6 +183,13 @@ sub volume_setacls {
         push (@acls, 'cvs-committers:pubsw', 'all');
     }
 
+    # Create the correct ACLs for tripwire volumes.
+    if ($volume =~ /^(?:ls|sweet)\.trip\./) {
+        push (@acls, 'system:localhosts', 'read');
+        push (@acls, 'system:administrators', 'rla');
+        push (@acls, 'itss:tss-cs-root', 'rla');
+    }
+
     # Actually set the ACLs.
     system ('/usr/afsws/bin/fs', 'setacl', $mtpt, @acls) == 0
         or warn 'Failed to set acls (status ', ($? >> 8), ")\n";
