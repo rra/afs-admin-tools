@@ -38,6 +38,10 @@ my ($server, $partition, $volume, $quota, $mtpt, @acls) = @ARGV;
 # specified in the correct fashion.
 die "Mount point must begin with /afs/.ir/\n" unless $mtpt =~ m%^/afs/.ir/%;
 
+# fs mkm doesn't like trailing slashes on the mount point, and neither does
+# the mount point database.
+$mtpt =~ s%/+$%%;
+
 # Canonify AFS server name.
 if ($server =~ /^\d+$/) { $server = "afssvr$server" }
 die "$server is not an afssvr\n" unless $server =~ /^afssvr\d+$/;
