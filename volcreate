@@ -30,7 +30,9 @@ $ACLS = '/afs/ir/service/afs/data/acl-rules';
 # The full path to fs and vos.  Allow for Linux where the preferred location
 # may be on local disk.
 ($FS)  = grep { -x $_ } qw(/usr/bin/fs /usr/afsws/bin/fs /usr/pubsw/bin/fs);
+$FS ||= '/usr/afsws/bin/fs';
 ($VOS) = grep { -x $_ } qw(/usr/bin/vos /usr/pubsw/bin/vos);
+$VOS ||= '/usr/pubsw/bin/vos';
 
 require 5.001;
 
