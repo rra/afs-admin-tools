@@ -477,7 +477,7 @@ die "Usage: $0 [-fns] [-t <threshold>] -L <list>\n"
 die "Usage: $0 -s (-l <list> | <volume>) <server> <part> <server> <part>\n"
     if ($single && @ARGV != 4 && !$location);
 die "$0: cannot move a specific site between partitions on the same server\n"
-    if ($single && $ARGV[0] eq $ARGV[2]);
+    if ($single && @ARGV && $ARGV[0] eq $ARGV[2]);
 
 # Do the work.  If -l or -L was given, this means looping on the volumes
 # listed in that file; otherwise, just move the single volume.
