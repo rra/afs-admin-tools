@@ -5,7 +5,8 @@ $ID = q$Id$;
 #
 # Written by Russ Allbery <rra@stanford.edu>
 # Based on code by Neil Crellin <neilc@stanford.edu>
-# Copyright 1998, 1999 Board of Trustees, Leland Stanford Jr. University
+# Copyright 1998, 1999, 2001
+#    Board of Trustees, Leland Stanford Jr. University
 #
 # A smart vos move, or a vos move that assumes you know what you're doing,
 # depending on your point of view.  mvto parses the output of vos examine
@@ -14,9 +15,20 @@ $ID = q$Id$;
 # replication pattern of a volume differs from what you want it to be and
 # correct it.
 
+############################################################################
+# Modules and declarations
+############################################################################
+
 use strict;
 use vars qw($ID);
+
+use Date::Parse qw(str2time);
 use Getopt::Long qw(GetOptions);
+
+
+############################################################################
+# Overrides
+############################################################################
 
 # Override system with something that checks return status.
 use subs qw(system);
@@ -25,23 +37,113 @@ sub system {
         or die "$0: @_ failed (status " . ($? >> 8) . ")\n";
 }
 
+
+############################################################################
+# AFS information
+############################################################################
+
+# Given a server name and a partition, fully qualify both and return them as
+# a list of ($server, $partition).  Accepts - as the partition to pick the
+# least loaded partition on that server, or a list of letters or letter
+# ranges to pick the least loaded of the partitions on the server from that
+# range.
+sub findpartition {
+    my ($server, $part) = @_;
+    $server = 'afssvr' . $server if ($server =~ /^\d+$/);
+    if ($part eq '.' || (length ($part) > 1 && $part =~ /^[a-z-]+$/)) {
+        $part = 'a-z' if $part eq '.';
+        open (INFO, "vos partinfo $server |") or die "$0: can't fork: $!\n";
+        my @free;
+        local $_;
+        while (<INFO>) {
+            if (m%^Free space on partition (/vicep[$part]): (\d+) K %) {
+                push (@free, [ $1, $2 ]);
+            } elsif (m%^Free space on partition (/vicep.)%) {
+                next;
+            } else {
+                die "$0: vos partinfo said $_\n";
+            }
+        }
+        @free = sort { $$b[1] <=> $$a[1] } @free;
+        $part = $free[0][0];
+    } else {
+        $part =~ s%^(?:/?vicep)?%/vicep%;
+    }
+    die "$0: invalid partition $part\n" if ($part !~ m%^/vicep[a-z]$%);
+    return ($server, $part);
+}
+
+
+# Given a volume name, determines various characteristics of the volume and
+# returns them in a hash.  'size' gets the volume size in KB, 'rwserver' and
+# 'rwpart' get the server and partition for the read-write volume, 'ro' gets
+# a hash of server and partition values for the replicas, 'sites' gets a
+# count of the number of sites the volume is replicated on, and 'unreleased'
+# gets a boolean value saying whether there are unreleased changes.
+sub volinfo {
+    my ($volume, $checkro) = @_;
+    my (%results, $rotime, $rwtime);
+    open (VEX, "/usr/pubsw/bin/vos examine $volume |")
+        or die "$0: can't fork vos examine: $!\n";
+    local $_;
+    while (<VEX>) {
+        if (/^\Q$volume\E\s+\d+ (RW|RO|BK)\s+(\d+) K\s+On-line\s*$/) {
+            die "$0: $volume is $1, not RW\n" unless $1 eq 'RW';
+            $results{size} = $2;
+        } elsif (/^\s+server ([^.\s]+)\.\S+ partition (\S+) RW Site\s*/) {
+            die "$0: saw two RW sites for $volume\n" if $results{rwserver};
+            $results{rwserver} = $1;
+            $results{rwpart} = $2;
+        } elsif (/^\s+server ([^.\s]+)\.\S+ partition (\S+) RO Site\s*/) {
+            $results{ro}{$1} = $2;
+            $results{sites}++;
+        } elsif (/^\s+Last Update (.*)/) {
+            my $tmp = $1;
+            $rwtime = str2time($tmp);
+        }
+    }
+    close VEX;
+    die "$0: unable to parse vos examine $volume\n"
+        unless ($results{rwserver} && $results{size});
+    if ($results{sites}) {
+        open (VEX, "/usr/pubsw/bin/vos examine $volume.readonly |")
+            or die "$0: can't fork vos examine for readonly: $!\n";
+        while (<VEX>) {
+            if (/^\s+Last Update (.*)/) {
+                my $tmp = $1;
+                $rotime = str2time($tmp);
+            }
+        }
+        close VEX;
+        if ($rwtime > $rotime) { $results{unreleased} = 1 }
+    }
+    return %results;
+}
+
+
+############################################################################
+# Implementation
+############################################################################
+
 # Usage message, in case the command line syntax is wrong.
 sub usage { die "Usage: $0 <vol> <server> <part> [<server> <part> ...]\n" }
 
 # Parse our options.
 my $fullpath = $0;
 $0 =~ s%.*/%%;
-my ($help, $justprint, $version);
+my ($help, $force, $justprint, $version);
 Getopt::Long::config ('bundling', 'no_ignore_case');
 GetOptions ('help|h'               => \$help,
             'dry-run|just-print|n' => \$justprint,
+            'force|f'              => \$force,
             'version|v'            => \$version) or exit 1;
 if ($help) {
     print "Feeding myself to perldoc, please wait....\n";
     exec ('perldoc', '-t', $fullpath);
 } elsif ($version) {
-    my $version = join (' ', (split (' ', $ID))[1,2]);
+    my $version = join (' ', (split (' ', $ID))[1..3]);
     $version =~ s/,v\b//;
+    $version =~ s/(\S+)$/($1)/;
     die $version, "\n";
 }
 
@@ -50,49 +152,34 @@ if ($help) {
 usage if (@ARGV < 3);
 my $volume = shift;
 usage if (@ARGV % 2 != 0);
-open (VEX, "/usr/pubsw/bin/vos examine $volume |")
-    or die "$0: can't fork vos examine: $!\n";
-my ($size, $rwserver, $rwpart, %ro, $sites);
-while (<VEX>) {
-    if (/^\Q$volume\E\s+\d+ (RW|RO|BK)\s+(\d+) K\s+On-line\s*$/) {
-        die "$0: $volume is $1, not RW\n" unless $1 eq 'RW';
-        $size = $2;
-    } elsif (/^\s+server ([^.\s]+)\.\S+ partition (\S+) RW Site\s*/) {
-        die "$0: saw two RW sites for $volume\n" if $rwserver;
-        $rwserver = $1;
-        $rwpart = $2;
-    } elsif (/^\s+server ([^.\s]+)\.\S+ partition (\S+) RO Site\s*/) {
-        $ro{$1} = $2;
-        $sites++;
-    }
-}
-close VEX;
-die "$0: unable to parse vos examine $volume\n" unless ($rwserver && $size);
-die "$0: replicated syntax given and $volume is unreplicated\n"
-    if (!$sites && @ARGV > 2);
-print "$volume on $rwserver $rwpart ($size KB)\n";
-for (keys %ro) { print "  replica on $_ $ro{$_}\n" }
+my %volume = volinfo $volume;
+print "\n$volume on $volume{rwserver} $volume{rwpart} ($volume{size} KB)";
+print " with unreleased changes" if $volume{unreleased};
+print "\n";
+for (keys %{ $volume{ro} }) { print "  replica on $_ $volume{ro}{$_}\n" }
+print "\n";
+die "$0: replica sites given and $volume is unreplicated\n"
+    if (!$volume{sites} && @ARGV > 2);
 
 # Now parse the first argument, which says what server to put the RW on.
-my (@commands, $needrelease);
-my $toserver = shift;
-my $topart = shift;
-$toserver = 'afssvr' . $toserver if ($toserver =~ /^\d+$/);
-$topart = '/vicep' . $topart unless ($topart =~ m%^/vicep%);
-die "$0: invalid partition $topart\n" if ($topart !~ m%^/vicep[a-z]+$%);
-if ($rwserver eq $toserver) {
-    print "$volume is already on $rwserver $rwpart\n";
-    if ($ro{$rwserver}) {
-        delete $ro{$rwserver};
-    } elsif ($sites) {
-        push (@commands, [ qw(vos addsite), $rwserver, $rwpart, $volume ]);
+my (@commands, $needrelease, $needspace);
+my ($toserver, $topart) = findpartition (shift, shift);
+my %ro = %{ $volume{ro} };
+if ($volume{rwserver} eq $toserver) {
+    print "$volume is already on $volume{rwserver}\n";
+    $needspace++;
+    if ($ro{$volume{rwserver}}) {
+        delete $ro{$volume{rwserver}};
+    } elsif ($volume{sites}) {
+        push (@commands, [ qw(vos addsite), $volume{rwserver},
+                           $volume{rwpart}, $volume ]);
         $needrelease++;
     }
 } else {
-    push (@commands, [ qw(vos move -v), $volume, $rwserver, $rwpart,
-                       $toserver, $topart ]);
+    push (@commands, [ qw(vos move -v), $volume, $volume{rwserver},
+                       $volume{rwpart}, $toserver, $topart ]);
     push (@commands, [ qw(vos backup), $volume ]);
-    if ($sites && (!$ro{$toserver} || $ro{$toserver} ne $topart)) {
+    if ($volume{sites} && (!$ro{$toserver} || $ro{$toserver} ne $topart)) {
         push (@commands, [ qw(vos remove), $toserver, $ro{$toserver},
                            "$volume.readonly" ]) if $ro{$toserver};
         push (@commands, [ qw(vos addsite), $toserver, $topart, $volume ]);
@@ -107,12 +194,10 @@ if ($rwserver eq $toserver) {
 # the server.
 my $replicas = 1;
 while (@ARGV) {
-    my ($server, $part) = splice (@ARGV, 0, 2);
-    $server = 'afssvr' . $server if ($server =~ /^\d+$/);
-    $part = '/vicep' . $part unless ($part =~ m%^/vicep%);
-    die "$0: invalid partition $part\n" if ($part !~ m%^/vicep[a-z]+$%);
+    my ($server, $part) = findpartition (splice (@ARGV, 0, 2));
     if ($ro{$server}) {
         print "$volume is already on $server $ro{$server}\n";
+        $needspace++;
         delete $ro{$server};
     } else {
         push (@commands, [ qw(vos addsite), $server, $part, $volume ]);
@@ -120,18 +205,23 @@ while (@ARGV) {
     }
     $replicas++;
 }
-if ($sites) {
-    if ($replicas < $sites) {
-        die "$0: would reduce replication from $sites sites to"
+if ($volume{sites}) {
+    if ($replicas < $volume{sites}) {
+        die "$0: would reduce replication from $volume{sites} sites to"
             . " $replicas sites\n";
-    } elsif ($replicas > $sites) {
-        die "$0: would increase replication from $sites sites to"
+    } elsif ($replicas > $volume{sites}) {
+        die "$0: would increase replication from $volume{sites} sites to"
             . " $replicas sites\n";
     }
 }
 
+# Refuse to release a volume with unreleased changes unless --force was
+# given on the command line.
+die "$0: volume has unreleased changes, use --force to force a release\n"
+    if ($volume{unreleased} && $volume{sites} && $needrelease && !$force);
+
 # Do the volume release, if necessary.
-if ($sites && $needrelease) {
+if ($volume{sites} && $needrelease) {
     push (@commands, [ qw(vos release -v -f), $volume ]);
 }
 
@@ -141,7 +231,7 @@ for (keys %ro) {
 }
 
 # Okay, run our commands.
-print "\n";
+print "\n" if $needspace;
 for (@commands) {
     print "@$_\n";
     unless ($justprint) { system (@$_) }
@@ -159,7 +249,7 @@ mvto - Move an AFS volume from anywhere
 
 =head1 SYNOPSIS
 
-mvto I<volume> I<server> I<partition> [I<server> I<partition> ...]
+mvto [B<-nf>] I<volume> I<server> I<partition> [I<server> I<partition> ...]
 
 =head1 DESCRIPTION
 
@@ -188,9 +278,12 @@ the volume is replicated), the volume will be released.  In practice, this
 means that unless the volume is already located on all of the same servers
 given on the command line, already has a replication site on the same
 partition as the read/write, and already has the right number of replication
-sites, the volume will be released if replicated.  No check is made to
-ensure that the volume is safe to release; don't pass replicated volumes
-that aren't safe to release to B<mvto>.
+sites, the volume will be released if replicated.
+
+If the volume needs to be released, B<mvto> will check to see if it has any
+unreleased changes.  If so, it will refuse to perform any operations unless
+the B<--force> (or B<-f>) command-line option is given to avoid accidentally
+releasing volumes with unreleased changes.
 
 If the read/write volume has to be moved, B<mvto> will run B<vos backup> on
 the volume after the move (since volume moves have a side effect of deleting
@@ -204,6 +297,15 @@ before running mvto.
 
 AFS servers may be specified as just a number; all numeric server names will
 have C<afssvr> prepended to them.
+
+Partitions may be specified as a simple letter, as C<vicepX>, or as
+C</vicepX>.  More than 26 partitions on one server is not supported.
+Partitions may also be specified as C<.>, in which case the parition on that
+server with the most free space according to B<vos partinfo> is chosen, or
+as a string of letters and letter ranges such as C<ace-gm>, in which case
+the partition of the set specified with the most free space is chosen.  (In
+this example, the set is /vicepa, /vicepc, /vicepe through /vicepg, or
+/vicepm on the given sever.)
 
 B<mvto> passes the verbose flag to most B<vos> commands it runs, and passes
 the B<-f> flag to B<vos release>.
@@ -221,6 +323,12 @@ C<perldoc -t>).
 
 Print out the version of B<mvto> and exit.
 
+=item B<-f>, B<--force>
+
+Release a volume if a release is required, even if that volume has
+unreleased changes.  Without this flag, B<mvto> will refuse to release a
+volume that has unreleased changes.
+
 =item B<-n>, B<--dry-run>, B<--just-print>
 
 Print out volume status information and the commands that B<mvto> would run,
@@ -232,12 +340,19 @@ but don't execute any of them.
 
 Move the volume ls.trip.windlord, wherever it is, to afssvr3 /vicepd:
 
-        mvto ls.trip.windlord afssvr3 /vicepd
+    mvto ls.trip.windlord afssvr3 /vicepd
 
 Move the volume ls to afssvr5 /vicepa, with replication sites on that same
 partition, on afssvr6 /vicepk, and on afssvr10 /vicepb:
 
-        mvto ls 5 a 6 k 10 b
+    mvto ls 5 a 6 k 10 b
+
+Move the volume pubsw to the partition on afssvr10 with the most free
+space, with one replication site on afssvr11 on whichever partition of the
+first three has the most free space.  This volume will be released even if
+it has unreleased changes.
+
+    mvto pubsw 10 . 11 a-c
 
 =head1 SEE ALSO
 
