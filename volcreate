@@ -109,15 +109,15 @@ sub find_targets {
         close INFO;
         if (!@free) { die "$0: no partition matching $part on $server\n" }
         @free = sort { $$b[1] <=> $$a[1] } @free;
-        push (@results, [ $server, $free[0][0], $free[0][2] ]);
+        push (@results, map { [ $server, $$_[0], $$_[2] ] } @free);
     }
     @results = sort { $$b[2] <=> $$a[2] } @results;
     return map { [ $$_[0], $$_[1] ] } @results;
 }
 
 # Given a volume type for an unreplicated volume, look through the types file
-# and find appropriate servers and partitions to use.  Returns the server and
-# partition pair that has the most percentage free space.
+# and find appropriate servers and partitions to use.  Returns a random server
+# and partition pair from the 25% that have the most percentage free space.
 sub find_best_normal {
     my $type = shift;
     my @locations;
@@ -147,7 +147,8 @@ sub find_best_normal {
     if (!@locations) {
         die "$0: no servers found for type $type\n";
     }
-    return @{ (find_targets @locations)[0] };
+    my @result = find_targets @locations;
+    return @{ $result[int rand (scalar (@result) / 4)] };
 }
 
 # Given a volume type for a replicated volume and the number of replicas, look
@@ -442,19 +443,20 @@ prepended to them.
 I<part> is the partition on which to create that volume.  Partitions may be
 specified as a simple letter, as C<vicepX>, or as C</vicepX>.  More than 26
 partitions on one server is not supported.  Partitions may also be specified
-as C<.>, in which case the parition on that server with the most free space
-according to B<vos partinfo> is chosen, or as a string of letters and letter
-ranges such as C<ace-gm>, in which case the partition of the set specified
-with the most free space is chosen.  (In this example, the set is /vicepa,
-/vicepc, /vicepe through /vicepg, or /vicepm on the given sever.)
+as C<.>, in which case a random parition on that server in the top 25% in
+free space according to B<vos partinfo> is chosen, or as a string of letters
+and letter ranges such as C<ace-gm>, in which case a random partition of the
+set specified in the top 25% in free space is chosen.  (In this example, the
+set is /vicepa, /vicepc, /vicepe through /vicepg, or /vicepm on the given
+sever.)
 
 Alternately, rather than giving a server and partition, B<volcreate> accepts
 the B<-t> option to specify a volume type.  If this option is given, no
 server or partition is necessary and B<volcreate> will instead place the
-volume on an appropriate server by finding the partition with the most
-percentage space free of the available servers for that volume type.  When
-B<-t> is given, B<-r> may also be given to specify a number of replicas if a
-replicated volume is being created.
+volume on an appropriate server by finding a random partition in the top 25%
+of the most percentage space free of the available server partitions for
+that volume type.  When B<-t> is given, B<-r> may also be given to specify a
+number of replicas if a replicated volume is being created.
 
 I<volume> is the name of the volume to create.  I<quota> is its quota in
 megabytes (B<not> in kilobytes).  I<mount> is the full path to the intended
