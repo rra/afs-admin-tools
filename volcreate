@@ -49,6 +49,12 @@ die "$server is not an afs server.\n" unless $server =~ /^afssvr\d+$|^gsbafs\d$/
 # Append system:backup rl on ACL list to allow ADSM backups.
 push (@acls, 'system:backup', 'rl');
 
+# Append acl's for groups and departments if necessary
+if(($volume =~ /^group/) || ($volume =~ /^dept/)) {
+  push (@acls, 'system:anyuser', 'rl');
+  push (@acls, 'system:dept-admin', 'all');
+}
+
 # Create the volume and mount it.  Set ACLs if we were given any, and then
 # chmod the root of the volume to 755 since AFS creates it 777.  Use
 # /usr/afsws/bin/fs to avoid the wrapper, which doesn't like us fiddling
