@@ -1,4 +1,7 @@
 #!/usr/local/bin/perl -w
+$version = q$Id$;
+#
+# frak - Show changes between two software trees
 
 require 5.003;                  # I prototype a sub below.
 
@@ -66,8 +69,11 @@ use vars qw($argc $maxdifflines $rw $ro $startrw $startro
             $roexists $roislink $roisdir $roismtpt $romtpt $roacl $rolsout
             $rwmodeoctal $romodeoctal
             $newloc $oldloc $newacl $oldacl
+	    $fs
            );
 
+$fs = '/usr/pubsw/bin/fs';
+# $fs = '/afs/ir/systems/@sys/usr/afs34a5.55/bin/fs';
 
 use vars qw($opt_suppressdiffs $opt_maxdifflines $opt_leave2ndRW
             $opt_changedir $opt_crossmountpoints %options);
@@ -142,7 +148,7 @@ sub getacl ($) {
     if ( !defined $pid ) {
         die "Unable to perform listacl on $dir: $!\n";
     } elsif ( $pid == 0 ) {
-        exec('/usr/pubsw/bin/fs','listacl',$dir)
+        exec($fs,'listacl',$dir)
             or die "Can't exec fs listacl on $dir: $!\n";
     }
     while (<LISTACL>) {
@@ -233,7 +239,7 @@ sub wantedrw {
     $rwlink = readlink ($rw) if $rwislink;
     $rwisdir  = (-d _);
     if ( $rwisdir ) {
-        $rwmtpt = `/usr/pubsw/bin/fs lsmount $rw  2>&1`;
+        $rwmtpt = `$fs lsmount $rw  2>&1`;
         $rwismtpt = ( $? == 0 ) ;
         $rwmtpt =~ s/.*a mount point for volume \'\#(\S+)\'\s+$/$1/ 
             if $rwismtpt;
@@ -249,7 +255,7 @@ sub wantedrw {
     $rolink = readlink ($ro) if $roislink;
     $roisdir  = (-d _);
     if ($roisdir) {
-        $romtpt = `/usr/pubsw/bin/fs lsmount $ro  2>&1`;
+        $romtpt = `$fs lsmount $ro  2>&1`;
         $roismtpt = ( $? == 0 ) ;
         $romtpt =~ s/.*a mount point for volume \'\#(\S+)\'\s+$/$1/ 
             if $roismtpt;
@@ -270,9 +276,9 @@ sub wantedrw {
                 print "  ACL is: $rwacl\n";
                 if ( $rw ne $startrw ) { $File::Find::prune = 1; return; }
                 if ( $opt_changedir ) {
-                    print REVERT bundle_quote('system', '/usr/pubsw/bin/fs', 
+                    print REVERT bundle_quote('system', $fs, 
                                               'rmm', $rwtidy), "\n";
-                    print APPLY  bundle_quote('system', '/usr/pubsw/bin/fs', 
+                    print APPLY  bundle_quote('system', $fs, 
                                               'mkm', $rwtidy, $rwmtpt), "\n"
                 }
             } else { # Directory but not mountpoint
@@ -290,7 +296,7 @@ sub wantedrw {
                                               "mode=$rwmodeoctal", 
                                               "atime=$rwatime", 
                                               "mtime=$rwmtime"), "\n";
-                    print APPLY  bundle_quote('system', '/usr/pubsw/bin/fs', 
+                    print APPLY  bundle_quote('system', $fs, 
                                               'setacl', $rwtidy, split(' ',$newacl), 
                                               '-clear'), "\n";
                 }
@@ -327,9 +333,9 @@ sub wantedrw {
                 print "  NOW: $rwlink\n";
                 if ( $opt_changedir ) {
                     print REVERT bundle_quote('delete', $rwtidy), "\n";
-                    print REVERT bundle_quote('system', '/usr/pubsw/bin/fs', 
+                    print REVERT bundle_quote('system', $fs, 
                                               'mkm', $rwtidy, $romtpt), "\n";
-                    print APPLY  bundle_quote('system', '/usr/pubsw/bin/fs', 
+                    print APPLY  bundle_quote('system', $fs, 
                                               'rmm', $rwtidy), "\n";
                     print APPLY  bundle_quote('link', $rwlink, $rwtidy), "\n";
                 }
@@ -373,11 +379,11 @@ sub wantedrw {
                 print "  WAS: $rolink\n";
                 print "  NOW: -> \#$rwmtpt\n";
                 if ( $opt_changedir ) {
-                    print REVERT bundle_quote('system', '/usr/pubsw/bin/fs', 
+                    print REVERT bundle_quote('system', $fs, 
                                               'rmm', $rwtidy), "\n";
                     print REVERT bundle_quote('link', $rolink, $rwtidy), "\n";
                     print APPLY  bundle_quote('delete', $rwtidy), "\n";
-                    print APPLY  bundle_quote('system', '/usr/pubsw/bin/fs', 
+                    print APPLY  bundle_quote('system', $fs, 
                                               'mkm', $rwtidy, $rwmtpt), "\n"
                 }
                 if ( $rw ne $startrw && ! $opt_crossmountpoints ) 
@@ -390,16 +396,16 @@ sub wantedrw {
                         print "  NOW: -> $rwmtpt\n";
                         if ( $opt_changedir && $rw ne $startrw ) {
                             print REVERT 
-                                bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                bundle_quote('system', $fs, 
                                              'rmm', $rwtidy), "\n";
                             print REVERT
-                                bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                bundle_quote('system', $fs, 
                                              'mkm', $rwtidy, $romtpt), "\n";
                             print APPLY 
-                                bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                bundle_quote('system', $fs, 
                                              'rmm', $rwtidy), "\n";
                             print APPLY  
-                                bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                bundle_quote('system', $fs, 
                                              'mkm', $rwtidy, $rwmtpt), "\n";
                         }
                     }
@@ -412,11 +418,11 @@ sub wantedrw {
                             ($newacl = $rwacl) =~ s/(=|,)/ /g;
                             ($oldacl = $roacl) =~ s/(=|,)/ /g;
                             print REVERT 
-                                bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                bundle_quote('system', $fs, 
                                              'setacl', $rwtidy, split(' ',$oldacl), 
                                              '-clear'), "\n";
                             print APPLY  
-                                bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                bundle_quote('system', $fs, 
                                              'setacl', $rwtidy, split(' ',$newacl), 
                                              '-clear'), "\n";
                         }
@@ -431,7 +437,7 @@ sub wantedrw {
                     print "  NOW: -> \#$rwmtpt\n";
                     if ( $opt_changedir ) {
                         print REVERT 
-                            bundle_quote('system', '/usr/pubsw/bin/fs', 'rmm', 
+                            bundle_quote('system', $fs, 'rmm', 
                                          $rwtidy), "\n";
                         print REVERT 
                             bundle_quote('dir', $rwtidy, "owner=$rouid", 
@@ -441,7 +447,7 @@ sub wantedrw {
                         print APPLY  bundle_quote('system', '/bin/rm', '-rf', 
                                                   $rwtidy), "\n";
                         print APPLY
-                            bundle_quote('system', '/usr/pubsw/bin/fs', 'mkm', 
+                            bundle_quote('system', $fs, 'mkm', 
                                          $rwtidy, $rwmtpt), "\n";
                     }
                     if ( $rw ne $startrw && ! $opt_crossmountpoints ) 
@@ -458,12 +464,12 @@ sub wantedrw {
                     $oldloc =~ s:^old\Q$startrwtrim\E:old:;
                     print CHANGES bundle_quote('file', $rotidy, $oldloc), "\n";
                     print REVERT 
-                        bundle_quote('system', '/usr/pubsw/bin/fs', 'rmm', 
+                        bundle_quote('system', $fs, 'rmm', 
                                      $rwtidy), "\n";
                     print REVERT  bundle_quote('file', $oldloc, $rwtidy), "\n";
                     print APPLY   bundle_quote('delete', $rwtidy), "\n";
                     print APPLY
-                        bundle_quote('system', '/usr/pubsw/bin/fs', 'mkm', 
+                        bundle_quote('system', $fs, 'mkm', 
                                      $rwtidy, $rwmtpt), "\n";
                 }
                 if ( $rw ne $startrw && ! $opt_crossmountpoints ) 
@@ -495,10 +501,10 @@ sub wantedrw {
                         print REVERT bundle_quote('system', '/bin/rm', '-rf', 
                                                   $rwtidy), "\n";
                         print REVERT
-                            bundle_quote('system', '/usr/pubsw/bin/fs', 'mkm', 
+                            bundle_quote('system', $fs, 'mkm', 
                                          $rwtidy, $romtpt), "\n";
                         print APPLY 
-                            bundle_quote('system', '/usr/pubsw/bin/fs', 'rmm', 
+                            bundle_quote('system', $fs, 'rmm', 
                                          $rwtidy), "\n";
                         print APPLY 
                             bundle_quote('dir', $rwtidy, "owner=$rwuid", 
@@ -541,11 +547,11 @@ sub wantedrw {
                         ($newacl = $rwacl) =~ s/(=|,)/ /g;
                         ($oldacl = $roacl) =~ s/(=|,)/ /g;
                         print REVERT 
-                            bundle_quote('system', '/usr/pubsw/bin/fs', 
+                            bundle_quote('system', $fs, 
                                          'setacl', $rwtidy, split(' ',$oldacl), 
                                          '-clear'), "\n";
                         print APPLY  
-                            bundle_quote('system', '/usr/pubsw/bin/fs', 
+                            bundle_quote('system', $fs, 
                                          'setacl', $rwtidy, split(' ',$newacl), 
                                          '-clear'), "\n";
                     }
@@ -597,10 +603,10 @@ sub wantedrw {
                     print CHANGES bundle_quote('file', $rwtidy, $newloc), "\n";
                     print REVERT  bundle_quote('delete', $rwtidy), "\n";
                     print REVERT
-                        bundle_quote('system', '/usr/pubsw/bin/fs', 'mkm', 
+                        bundle_quote('system', $fs, 'mkm', 
                                      $rwtidy, $romtpt), "\n";
                     print APPLY 
-                        bundle_quote('system', '/usr/pubsw/bin/fs', 'rmm', 
+                        bundle_quote('system', $fs, 'rmm', 
                                      $rwtidy), "\n";
                     print APPLY   bundle_quote('file', $newloc, $rwtidy), "\n";
                 }
@@ -695,7 +701,7 @@ sub wantedro {
     $rolink = readlink($ro) if $roislink;
     $roisdir = (-d _);
     if ($roisdir) {
-        $romtpt = `/usr/pubsw/bin/fs lsmount $ro  2>&1`;
+        $romtpt = `$fs lsmount $ro  2>&1`;
         $roismtpt = ( $? == 0 ) ;
         $romtpt =~ s/.*a mount point for volume \'\#(\S+)\'\s+$/$1/ 
             if $roismtpt;
@@ -715,10 +721,10 @@ sub wantedro {
                 print "Deleted mountpoint: $rotrim -> \#$romtpt\n";  
                 if ( $opt_changedir ) {
                     print REVERT  
-                        bundle_quote('system', '/usr/pubsw/bin/fs', 'mkm', 
+                        bundle_quote('system', $fs, 'mkm', 
                                      $rwtidy, $romtpt), "\n";
                     print APPLY 
-                        bundle_quote('system', '/usr/pubsw/bin/fs', 'rmm', 
+                        bundle_quote('system', $fs, 'rmm', 
                                      $rwtidy), "\n";
                 }
                 if ( $ro ne $startro && ! $opt_crossmountpoints ) 
@@ -775,5 +781,20 @@ __END__
 =head1 NAME
 
 frak - Show changes between two software trees
+
+=head1 SYNOPSIS
+
+frak [options] RW_volume_mountpoint [RO_volume_mountpoint]
+
+=head1 DESCRIPTION
+
+B<frak> is a tool for comparing the structure and contents of two directory
+trees in AFS.  Its most common use will be to determine the changes
+contained in a read-write volume relative to the readonly copy of that
+volume.  It can also be used for the comparison of AFS directory copies, and
+to generate bundle files which encapsulate the changes between the two file
+trees which can be used to revert and re-apply those changes, as may be the
+case when a volume containing changes needs to be relocated without
+releasing the changes therein contained.
 
 =cut
