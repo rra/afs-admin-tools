@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 $ID = q$Id$;
 #
-# make-log-volumes -- Create and grant quota to log volumes in AFS.
+# afs-manage-logs -- Create and grant quota to log volumes in AFS.
 #
 # Written by Russ Allbery <rra@stanford.edu>
 # Copyright 2002 Board of Trustees, Leland Stanford Jr. University
@@ -346,11 +346,11 @@ __END__
 
 =head1 NAME
 
-make-log-volumes - Manage AFS log volumes.
+afs-manage-logs - Manage AFS log volumes.
 
 =head1 SYNOPSIS
 
-B<make-log-volumes> [B<-hmnv>]
+B<afs-manage-logs> [B<-hmnv>]
 
 =head1 DESCRIPTION
 
@@ -366,7 +366,7 @@ It uses B<volcreate> to create all new log volumes, and therefore initial
 ACLs for new log volumes can be set using B<volcreate>'s ACL handling
 capabilities.  See L<volcreate(1)> for more information.
 
-In order to use B<make-log-volumes> to manage a set of volumes, the volumes
+In order to use B<afs-manage-logs> to manage a set of volumes, the volumes
 must use standard directory structure and naming conventions.  This means
 that under some root log directory, volumes must be organized like:
 
@@ -410,7 +410,7 @@ standard out each command that would be executed.
 
 =item B<-v>, B<--version>
 
-Print out the version of B<make-log-volumes> and exit.
+Print out the version of B<afs-manage-logs> and exit.
 
 =back
 
@@ -418,16 +418,16 @@ Print out the version of B<make-log-volumes> and exit.
 
 Process all of the current rules, reporting actions to standard out.
 
-    make-log-volumes
+    afs-manage-logs
 
 Do the same, but instead send the report via e-mail.
 
-    make-log-volumes -m
+    afs-manage-logs -m
 
 Check to see what needs to be done, but don't actually do it.  Instead, just
 print the commands that would be executed to standard out:
 
-    make-log-volumes -n
+    afs-manage-logs -n
 
 =head1 FILES
 
@@ -435,9 +435,9 @@ print the commands that would be executed to standard out:
 
 =item F</afs/ir/service/afs/data/log-volumes>
 
-This file specifies the collections of log volumes managed by the script
-make-log-volumes, which runs on lsdb nightly and increases quota or creates
-new log volumes as needed.  The syntax must look like:
+This file specifies the collections of log volumes managed by this program,
+which runs on lsdb nightly and increases quota or creates new log volumes
+as needed.  The syntax must look like:
 
     log {
         name: <volume-name>
@@ -454,7 +454,7 @@ year of logs, and <quota> is the starting quota for each volume in MB.
 
 =item F</afs/ir/service/afs/scripts/volcreate>
 
-Used to create volumes.  B<make-log-volumes> assumes that B<volcreate> has
+Used to create volumes.  B<afs-manage-logs> assumes that B<volcreate> has
 been configured to set the appropriate initial ACLs for the volumes.
 
 =back
