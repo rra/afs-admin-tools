@@ -19,6 +19,10 @@ $CONFIG = '/afs/ir/service/afs/data/log-volumes';
 # The path to volcreate, used to create volumes.
 $VOLCREATE = '/afs/ir/service/afs/scripts/volcreate';
 
+# Set the path to make sure that programs we execute can find the AFS
+# programs.
+$ENV{PATH} = "/usr/pubsw/bin:$ENV{PATH}";
+
 require 5.005;
 
 use strict;
@@ -167,6 +171,7 @@ sub create_volume {
         warn "$volume not created: ${quota}MB exceeds maximum of 2GB\n";
         return;
     }
+    $mountpoint =~ s%/afs/ir%/afs/.ir%;
     if (-d "$mountpoint") {
         warn "$volume not created: $mountpoint already exists\n";
         return;
