@@ -20,16 +20,17 @@ $ID = q$Id$;
 ##############################################################################
 
 # The path to a file containing a list of current AFS servers and their volume
-# types.  Each line should start with an AFS server name and then optionally
-# contain a space-separated list of types of volumes handled by that server.
-# Those volume types may begin with a single letter and a colon, indicating
-# that only the partition named by that letter handles that type of volume.
+# types.  See the documentation for its format.
 $SERVERS = '/afs/ir/service/afs/data/serverlist.types';
+
+# The path to a file containing ACL rules for volumes.  See the documentation
+# for its format.
+$ACLS = '/afs/ir/service/afs/data/acl-rules';
 
 require 5.001;
 
 use strict;
-use vars qw($ID $JUSTPRINT $SERVERS);
+use vars qw($ACLS $ID $JUSTPRINT $SERVERS);
 use subs qw(system);
 
 use Getopt::Long qw(GetOptions);
@@ -235,27 +236,33 @@ sub volume_mount {
 sub volume_setacls {
     my ($volume, $mtpt, @acls) = @_;
 
-    # Append system:backup rl on ACL list to allow ADSM backups.
-    push (@acls, 'system:backup', 'rl');
-
-    # Append ACLs for groups and departments if necessary
-    if ($volume =~ /^(?:group|dept)\./) {
-        push (@acls, 'system:anyuser', 'rl');
-        push (@acls, 'system:dept-admin', 'all');
+    # Find any extra ACLs that apply to this volume.
+    my @extra;
+    if (open (ACLS, $ACLS)) {
+        local $_;
+        my $found = 0;
+        while (<ACLS>) {
+            next if /^\s+\#/;
+            next if /^\s*$/;
+            if (m%^/(.*)/\s*$%) {
+                my $regex = $1;
+                $found = ($volume =~ /$regex/);
+            } elsif ($found && /^\s/) {
+                my ($user, $acl, $bogus) = split;
+                if ($bogus || !$user || !$acl) {
+                    warn "$0: syntax error on line $. of $ACLS\n";
+                    next;
+                }
+                push (@extra, $user, $acl);
+            }
+        }
+        close ACLS;
+    } else {
+        warn "$0: cannot open $ACLS: $!\n";
     }
 
-    # Create the correct ACLs for pubsw volumes.
-    if ($volume =~ /^(?:pubsw|sweet)\./) {
-        push (@acls, 'system:administrators', 'none');
-        push (@acls, 'cvs-committers:pubsw', 'all');
-    }
-
-    # Create the correct ACLs for tripwire volumes.
-    if ($volume =~ /^(?:ls|sweet)\.trip\./) {
-        push (@acls, 'system:localhosts', 'read');
-        push (@acls, 'system:administrators', 'rla');
-        push (@acls, 'itss:tss-cs-root', 'rla');
-    }
+    # Append the extra ACLs that apply to this volume.
+    push (@acls, @extra);
 
     # Actually set the ACLs.
     system ('/usr/afsws/bin/fs', 'setacl', $mtpt, @acls) == 0
@@ -407,13 +414,8 @@ mount location of the volume (this must begin with "/afs/.ir/" so that the
 mount point database remains consistent).  I<acl> is any normal ACL
 arguments to C<fs setacl>.
 
-For some types of volumes, some ACLs will be set automatically.  For volumes
-beginning with C<group.> or C<dept.>, system:anyuser read and
-system:dept-admin all will be added.  For volumes beginning with C<pubsw.>
-or C<sweet.>, system:administrators access will be removed, and
-cvs-committers:pubsw all access will be added.  (The appropriate access for
-users will also have to be added.)  In addition, for all volumes,
-system:backup read will be added to the ACLs.
+For some types of volumes, some ACLs will be set automatically.  This is
+governed by the F<acl-rules> file; see L<FILES> below.
 
 =head1 OPTIONS
 
@@ -475,7 +477,8 @@ pubsw.byacc19 with a quota of 20MB and mount it at
     volcreate -t pubsw -r 3 pubsw.byacc19 20 \
         /afs/.ir/pubsw/Langauges/byacc-1.9
 
-The correct ACLs for a pubsw volume will be set automatically.
+The correct ACLs for a pubsw volume will be set based on the F<acl-rules>
+file.
 
 =head1 FILES
 
@@ -484,18 +487,46 @@ The correct ACLs for a pubsw volume will be set automatically.
 =item F</afs/ir/service/afs/data/serverlist.types>
 
 The default path to a file containing a list of current AFS servers and
-their volume types.  Each line should start with an AFS server name and then
+their volume types.  Each line should start with an AFS server name,
+optionally a location for that server in square brackets, and then
 optionally contain a space-separated list of types of volumes handled by
-that server.  Those volume types may begin with a single letter and a colon,
-indicating that only the partition named by that letter handles that type of
-volume.
+that server.  Those volume types may begin with a single letter or range of
+letters and a colon, indicating that only the partition or partitions named
+handle that type of volume.
 
 For non-replicated volumes, the type in this file should match the type
 given to B<volcreate>.  For replicated volumes, the type suffixed with
-C<-rw> will be used for the read/write volume, the type suffixed with
-C<-ro-first> will be used for the first replica (on a different server than
-the replica that lives with the read/write volume), and the type suffixed
-with C<-ro> will be used for the other read-only volumes.
+C<-rw> will be used for the read/write volume and the type suffixed with
+C<-ro> will be used for the replicas.
+
+So, for example, a sample entry would be:
+
+    afssvr11 [sweet] a-c:logs d:pubsw-ro d:web-ro
+
+When creating replicated volumes, B<volcreate> will attempt to put at least
+one replica in every distinct location that accepts the C<-ro> version of
+that volume type.
+
+=item F</afs/ir/service/afs/data/acl-rules>
+
+This file contains rules specifying the default ACLs that should be set on
+different types of volumes.  The format of this file should be a regular
+expression matching a class of volumes, surrounded by // and starting in the
+first column, and then followed by whitespace-indented user/ACL pairs that
+apply to that class of volumes, one per line.  All matching regular
+expressions will contribute their set of ACL settings to the final ACL
+string.  Any ACLs given on the command line of volcreate will take
+precedence over the ones in this file (but the ones in this file will still
+be applied -- the ACLs will be merged).
+
+A sample entry would be:
+
+    /^(group|dept)\./
+        system:anyuser read
+        system:dept-admin all
+
+Note that the regex line must not be indented (must begin in column one),
+and the ACL lines must be indented.  Think of it as Python.
 
 =head1 SEE ALSO
 
