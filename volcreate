@@ -1,35 +1,133 @@
 #!/usr/bin/perl -w
-# $Id$
+$ID = q$Id$;
 #
 # volcreate -- Create a volume, mount and set acl and quota
 #
-# Usage: volcreate server partition volname quota mtpt [acls]
+# Written by Neil Crellin <neilc@stanford.edu>
+#        and Russ Allbery <rra@stanford.edu>
+# Copyright 1998 Board of Trustees, Leland Stanford Jr. University
+#
+# Creates a new AFS volume on the given server and partition and mounts it
+# in the file system, setting default ACLs if appropriate.  It then calls
+# loadmtpt to update the mount point database.
 
-$argc = @ARGV;
-die "Usage: volcreate server partition volname quota mtpt [acls]\n" 
-    if ($argc < 5);
+require 5.001;
 
-$server  = shift;
-$part    = shift;
-$volname = shift;
-$quota   = shift;
-$mtpt    = shift;
-@acls    = @ARGV;
+use strict;
+use vars qw($ID);
 
-die "Uneven acl pairs\n" if ( @acls % 2 != 0 );
+# Trim extraneous garbage from the path.
+my $fullpath = $0;
+$0 =~ s%.*/%%;
 
-if ($server =~ /^\d+$/) { $server = "afssvr$server" }
-die "not an afssvr\n" unless $server =~ /^afssvr/;
-
-system('/usr/pubsw/bin/vos', 'create', $server, $part, 
-                             $volname, $quota*1000) == 0 
-    or die "Failed to create volume, status of $?\n";
-system('/usr/pubsw/bin/fs', 'mkm', $mtpt, $volname) == 0
-    or die "Failed to make mount point, status of $?\n";
-if ( @acls ) {
-    system('/usr/pubsw/bin/fs', 'setacl', $mtpt, @acls) == 0
-        or warn "Failed to set acls, status of $?\n";
+# Parse command line options.  We do allow an odd number of arguments for
+# ACLs, in order to allow things like -clear.
+if (@ARGV && $ARGV[0] =~ /^-.*h/) {
+    print "Feeding myself to perldoc, please wait....\n";
+    exec ('perldoc', '-t', $fullpath) or die "$0: can't fork: $!\n";
+} elsif (@ARGV && $ARGV[0] =~ /^-.*v/) {
+    my $version = join (' ', (split (' ', $ID))[1,2]);
+    $version =~ s/,v\b//;
+    die $version, "\n";
 }
-system('chmod', '755', $mtpt) == 0 or warn "Couldn't chmod\n";
-system('/afs/ir/site/leland/afs/scripts/loadmtpt', $mtpt) == 0 
-    or warn "Couldn't load mountpoint, status of $?\n"; 
+die "Usage: volcreate server partition volname quota mtpt [acls]\n" 
+    if (@ARGV < 5);
+my ($server, $partition, $volume, $quota, $mtpt, @acls) = @ARGV;
+
+# Because we're loading the mount point database, we need the mount point
+# specified in the correct fashion.
+die "Mount point must begin with /afs/.ir/\n" unless $mtpt =~ m%^/afs/.ir/%;
+
+# Canonify AFS server name.
+if ($server =~ /^\d+$/) { $server = "afssvr$server" }
+die "$server is not an afssvr\n" unless $server =~ /^afssvr\d+$/;
+
+# Create the volume and mount it.  Set ACLs if we were given any, and then
+# chmod the root of the volume to 755 since AFS creates it 777.
+system ('/usr/pubsw/bin/vos', 'create', $server, $partition, $volume,
+        $quota * 1000) == 0 
+    or die 'Failed to create volume (status ', ($? >> 8), ")\n";
+system ('/usr/pubsw/bin/fs', 'mkm', $mtpt, $volume) == 0
+    or die 'Failed to make mount point (status ', ($? >> 8), ")\n";
+if (@acls) {
+    system ('/usr/pubsw/bin/fs', 'setacl', $mtpt, @acls) == 0
+        or warn 'Failed to set acls (status ', ($? >> 8), ")\n";
+}
+chmod (0755, $mtpt) or warn "Failed to chmod root: $!\n";
+system ('/afs/ir/site/leland/afs/scripts/loadmtpt', $mtpt) == 0 
+    or warn 'Failed to load mountpoint (status ', ($? >> 8), ")\n"; 
+
+__END__
+
+############################################################################
+# Documentation
+############################################################################
+
+=head1 NAME
+
+volcreate - Create and mount a new AFS volume
+
+=head1 SYNOPSIS
+
+B<volcreate> [B<-hv>] I<server> I<part> I<volume> I<quota> I<mount>
+[I<acl> ...]
+
+=head1 DESCRIPTION
+
+B<volcreate> creates a new AFS volume on the given server and partition,
+sets its quota, and mounts it in the file system at the given path,
+optionally setting its ACL.  It then updates the AFS mount point database to
+include this new volume.
+
+I<server> should be either a full server name (like "afssvr3") or just a
+number (like "3", which is equivalent).  I<part> is the partition on that
+server to use, in any form accepted by the standard AFS utilities ("a",
+"vicepa", and "/vicepa" are all allowed).  I<volume> is the name of the
+volume to create.  I<quota> is its quota in megabytes (B<not> in kilobytes).
+I<mount> is the full path to the intended mount location of the volume (this
+must begin with "/afs/.ir/" so that the mount point database remains
+consistent).  I<acl> is any normal ACL arguments to C<fs setacl>.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-h>, B<--help>
+
+Print out this documentation (which is done simply by feeding the script
+to C<perldoc -t>).
+
+=item B<-v>, B<--version>
+
+Print out the version of B<volcreate> and quit.
+
+=back
+
+=head1 EXAMPLES
+
+Create the volume ls.mail.logs on afssvr14 /vicepa with a quota of 20MB and
+mount it on /afs/.ir/site/leland/mail/logs:
+
+  volcreate afssvr14 a ls.mail.logs 20 /afs/.ir/site/leland/mail/logs
+
+Create ls.trip.nntp on afssvr3 /vicepc with a quota of 5MB and mount it on
+/afs/.ir/site/leland/tripwire/nntp.Stanford.EDU.  Set a default ACL only
+giving system:localhosts read access and rra all access.
+
+  volcreate 3 c ls.trip.nntp 5 \
+      /afs/.ir/site/leland/tripwire/nntp.Stanford.EDU \
+      -clear system:localhosts read rra all
+
+(this should all be typed on one line).  Note that C<fs setacl> flags like
+-clear are allowed.
+
+=head1 SEE ALSO
+
+L<vos_create(1)>, L<fs_mkmount(1)>, L<fs_setquota(1)>, L<fs_setacl(1)>
+
+=head1 AUTHORS
+
+Neil Crellin E<lt>neilc@stanford.eduE<gt> and Russ Allbery
+E<lt>rra@stanford.eduE<gt>.
+
+=cut
