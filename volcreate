@@ -5,7 +5,7 @@ $ID = q$Id$;
 #
 # Written by Neil Crellin <neilc@stanford.edu>
 #        and Russ Allbery <rra@stanford.edu>
-# Copyright 1998, 1999, 2000, 2002, 2004
+# Copyright 1998, 1999, 2000, 2002, 2004, 2005
 #     Board of Trustees, Leland Stanford Jr. University
 #
 # This program is free software; you may redistribute it and/or modify it
@@ -19,16 +19,20 @@ $ID = q$Id$;
 # Site configuration
 ##############################################################################
 
-# The path to a file containing a list of current AFS servers and their volume
-# types.  See the documentation for its format.
-$SERVERS = '/afs/ir/service/afs/data/serverlist.types';
-
 # The path to a file containing ACL rules for volumes.  See the documentation
 # for its format.
 $ACLS = '/afs/ir/service/afs/data/acl-rules';
 
+# The cutoff proportion of candidate partitions that will be considered for
+# placement of a read/write volume.  This can be overridden with the -p flag.
+$CUTOFF = 0.2;
+
 # The full path to the loadmtpt utility.
 $LOADMTPT = '/afs/ir/service/afs/scripts/loadmtpt';
+
+# The path to a file containing a list of current AFS servers and their volume
+# types.  See the documentation for its format.
+$SERVERS = '/afs/ir/service/afs/data/serverlist.types';
 
 # The full path to fs and vos.  Allow for Linux where the preferred location
 # may be on local disk.
@@ -44,7 +48,7 @@ $VOS ||= '/usr/pubsw/bin/vos';
 require 5.005;
 
 use strict;
-use vars qw($ACLS $FS $ID $JUSTPRINT $LOADMTPT $SERVERS $VOS);
+use vars qw($ACLS $CUTOFF $FS $ID $JUSTPRINT $LOADMTPT $SERVERS $VOS);
 use subs qw(system);
 
 use Getopt::Long qw(GetOptions);
@@ -148,7 +152,7 @@ sub find_best_normal {
         die "$0: no servers found for type $type\n";
     }
     my @result = find_targets @locations;
-    return @{ $result[int rand (scalar (@result) / 4)] };
+    return @{ $result[int rand (scalar (@result) * $CUTOFF)] };
 }
 
 # Given a volume type for a replicated volume and the number of replicas, look
@@ -199,7 +203,8 @@ sub find_best_replicated {
         die "$0: insufficient servers found for type $type\n";
     }
     my @locations;
-    push (@locations, (find_targets @rw)[0]);
+    my @targets = find_targets @rw;
+    push (@locations, $targets[int rand (scalar (@targets) * $CUTOFF)]);
     my %sites = map { $_ => 1 } values %servers;
     for my $site (keys %sites) {
         last if @locations >= $replicas;
@@ -333,6 +338,7 @@ GetOptions ('c|clone=s'            => \$clone,
             'h|help'               => \$help,
             'q|quiet'              => \$quiet,
             'n|dry-run|just-print' => \$JUSTPRINT,
+            'p|proportion=f'       => \$CUTOFF,
             'r|replicas=i'         => \$replicas,
             't|type=s'             => \$type,
             'v|version'            => \$version) or exit 1;
@@ -348,6 +354,7 @@ if ($help) {
     exit 0;
 }
 if ($replicas && !$type) { die "-r option given without -t option\n" }
+if ($CUTOFF > 1 || $CUTOFF < 0) { die "-p value must be between 0 and 1\n" }
 $replicas ||= 0;
 
 # If quiet operation was requested, cheat by rerouting stdout to /dev/null.
@@ -423,10 +430,10 @@ volcreate - Create and mount a new AFS volume
 
 =head1 SYNOPSIS
 
-B<volcreate> [B<-hnqv>] [B<-c> I<clone-from>] I<server> I<part> I<volume>
-I<quota> I<mount> [I<acl> ...]
+B<volcreate> [B<-hnqv>] [B<-c> I<clone-from>] [B<-p> I<cutoff>] I<server>
+I<part> I<volume> I<quota> I<mount> [I<acl> ...]
 
-B<volcreate> [B<-hnqv>] [B<-c> I<clone-from>] B<-t> I<type>
+B<volcreate> [B<-hnqv>] [B<-c> I<clone-from>] B<-t> I<type> [B<-p> I<cutoff>]
 [B<-r> I<replicas>] I<volume> I<quota> I<mount> [I<acl> ...]
 
 =head1 DESCRIPTION
@@ -443,20 +450,28 @@ prepended to them.
 I<part> is the partition on which to create that volume.  Partitions may be
 specified as a simple letter, as C<vicepX>, or as C</vicepX>.  More than 26
 partitions on one server is not supported.  Partitions may also be specified
-as C<.>, in which case a random parition on that server in the top 25% in
+as C<.>, in which case a random parition on that server in the top 20% in
 free space according to B<vos partinfo> is chosen, or as a string of letters
 and letter ranges such as C<ace-gm>, in which case a random partition of the
-set specified in the top 25% in free space is chosen.  (In this example, the
+set specified in the top 20% in free space is chosen.  (In this example, the
 set is /vicepa, /vicepc, /vicepe through /vicepg, or /vicepm on the given
-sever.)
+sever.)  The 20% cutoff proportion can be overridden with the B<-p> option.
 
 Alternately, rather than giving a server and partition, B<volcreate> accepts
 the B<-t> option to specify a volume type.  If this option is given, no
 server or partition is necessary and B<volcreate> will instead place the
-volume on an appropriate server by finding a random partition in the top 25%
+volume on an appropriate server by finding a random partition in the top 20%
 of the most percentage space free of the available server partitions for
-that volume type.  When B<-t> is given, B<-r> may also be given to specify a
-number of replicas if a replicated volume is being created.
+that volume type.  As above, the cutoff proportion can be overridden with
+the B<-p> option.  For more information on defining volume types and
+associating them with appropriate servers and partitions, see L<FILES>
+below.
+
+When B<-t> is given, B<-r> may also be given to specify a number of replicas
+if a replicated volume is being created.  When creating a replicated volume,
+the read/write copy will be placed as described above, but the read-only
+replicas will be placed on the I<replicas> partitions with the most free
+space.
 
 I<volume> is the name of the volume to create.  I<quota> is its quota in
 megabytes (B<not> in kilobytes).  I<mount> is the full path to the intended
@@ -489,6 +504,22 @@ to C<perldoc -t>).
 =item B<-n>, B<--dry-run>, B<--just-print>
 
 Don't run any commands, just print out what would have been done.
+
+=item B<-p> I<cutoff>, B<--proportion>=I<cutoff>
+
+By default, when placing read/write volumes, the destination partition will
+be chosen randomly from the top 20% of partitions ranked by the most free
+space.  The placement of the volume is somewhat randomized to avoid putting
+lots of small volumes on the same mostly unused partition, creating a
+long-term space problem when all of those volumes are used.
+
+This option can be used to change the number of partitions selected from for
+this random placement.  The default is 0.2, representing that top 20%
+metric.  A value of 0 will always choose the partition with the most free
+space.  A value of 1 will cause the placement to be completely random among
+all possible locations, without regard to which have the most free space.
+Any other value will be the proportion of the possible locations that will
+be chosen between randomly.
 
 =item B<-q>, B<--quiet>
 
@@ -616,8 +647,8 @@ Neil Crellin <neilc@stanford.edu> and Russ Allbery <rra@stanford.edu>.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 1998, 1999, 2000, 2002, 2004 Board of Trustees, Leland Stanford
-Jr. University.
+Copyright 1998, 1999, 2000, 2002, 2004, 2005 Board of Trustees, Leland
+Stanford Jr. University.
 
 This program is free software; you may redistribute it and/or modify it
 under the same terms as Perl itself.
