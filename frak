@@ -1,11 +1,13 @@
 #!/usr/local/bin/perl -w
 
-require 5.003; # I prototype a sub below.
+require 5.003;                  # I prototype a sub below.
 
-use File::Find;
-use Date::Format;
-use Getopt::Long;
-use Carp;
+use File::Find qw(find);
+use Date::Format qw(ctime);
+use Getopt::Long qw(GetOptions);
+use Carp qw(confess);
+
+use strict;
 
 # Mode masks from /usr/include/sys/stat.h
 
@@ -16,47 +18,64 @@ use vars qw($S_IFMT $S_IAMB $S_IFIFO $S_IFCHR $S_IFDIR $S_IFNAM
             $S_IRWXG $S_IRGRP $S_IWGRP $S_IXGRP $S_IRWXO $S_IROTH
             $S_IWOTH $S_IXOTH);
 
-$S_IFMT     =     0xF000  ; #  type of file 
-$S_IAMB     =     0x1FF   ; #  access mode bits 
-$S_IFIFO    =     0x1000  ; #  fifo 
-$S_IFCHR    =     0x2000  ; #  character special 
-$S_IFDIR    =     0x4000  ; #  directory 
-$S_IFNAM    =     0x5000  ; #  XENIX special named file 
-$S_INSEM    =     0x1     ; #  XENIX semaphore subtype of IFNAM 
-$S_INSHD    =     0x2     ; #  XENIX shared data subtype of IFNAM 
-$S_IFBLK    =     0x6000  ; #  block special 
-$S_IFREG    =     0x8000  ; #  regular 
-$S_IFLNK    =     0xA000  ; #  symbolic link 
-$S_IFSOCK   =     0xC000  ; #  socket 
-$S_IFDOOR   =     0xD000  ; #  door 
-$S_ISUID    =     0x800   ; #  set user id on execution 
-$S_ISGID    =     0x400   ; #  set group id on execution 
-$S_ISVTX    =     0x200   ; #  save swapped text even after use 
-$S_IREAD    =     00400   ; #  read permission, owner 
-$S_IWRITE   =     00200   ; #  write permission, owner 
-$S_IEXEC    =     00100   ; #  execute/search permission, owner 
-$S_ENFMT    =     $S_ISGID; #  record locking enforcement flag 
-         
-#  the following macros are for POSIX conformance 
-         
-$S_IRWXU = 00700;           #  read, write, execute: owner 
-$S_IRUSR = 00400;           #  read permission: owner 
-$S_IWUSR = 00200;           #  write permission: owner 
-$S_IXUSR = 00100;           #  execute permission: owner 
-$S_IRWXG = 00070;           #  read, write, execute: group 
-$S_IRGRP = 00040;           #  read permission: group 
-$S_IWGRP = 00020;           #  write permission: group 
-$S_IXGRP = 00010;           #  execute permission: group 
-$S_IRWXO = 00007;           #  read, write, execute: other 
-$S_IROTH = 00004;           #  read permission: other 
-$S_IWOTH = 00002;           #  write permission: other 
-$S_IXOTH = 00001;           #  execute permission: other 
+$S_IFMT     =     0xF000  ;     #  type of file 
+$S_IAMB     =     0x1FF   ;     #  access mode bits 
+$S_IFIFO    =     0x1000  ;     #  fifo 
+$S_IFCHR    =     0x2000  ;     #  character special 
+$S_IFDIR    =     0x4000  ;     #  directory 
+$S_IFNAM    =     0x5000  ;     #  XENIX special named file 
+$S_INSEM    =     0x1     ;     #  XENIX semaphore subtype of IFNAM 
+$S_INSHD    =     0x2     ;     #  XENIX shared data subtype of IFNAM 
+$S_IFBLK    =     0x6000  ;     #  block special 
+$S_IFREG    =     0x8000  ;     #  regular 
+$S_IFLNK    =     0xA000  ;     #  symbolic link 
+$S_IFSOCK   =     0xC000  ;     #  socket 
+$S_IFDOOR   =     0xD000  ;     #  door 
+$S_ISUID    =     0x800   ;     #  set user id on execution 
+$S_ISGID    =     0x400   ;     #  set group id on execution 
+$S_ISVTX    =     0x200   ;     #  save swapped text even after use 
+$S_IREAD    =     00400   ;     #  read permission, owner 
+$S_IWRITE   =     00200   ;     #  write permission, owner 
+$S_IEXEC    =     00100   ;     #  execute/search permission, owner 
+$S_ENFMT    =     $S_ISGID;     #  record locking enforcement flag 
 
-use vars qw($opt_suppressdiffs $opt_maxdifflines $opt_leave2ndRW);
+#  the following macros are for POSIX conformance 
+
+$S_IRWXU = 00700;               #  read, write, execute: owner 
+$S_IRUSR = 00400;               #  read permission: owner 
+$S_IWUSR = 00200;               #  write permission: owner 
+$S_IXUSR = 00100;               #  execute permission: owner 
+$S_IRWXG = 00070;               #  read, write, execute: group 
+$S_IRGRP = 00040;               #  read permission: group 
+$S_IWGRP = 00020;               #  write permission: group 
+$S_IXGRP = 00010;               #  execute permission: group 
+$S_IRWXO = 00007;               #  read, write, execute: other 
+$S_IROTH = 00004;               #  read permission: other 
+$S_IWOTH = 00002;               #  write permission: other 
+$S_IXOTH = 00001;               #  execute permission: other 
+
+use vars qw($argc $maxdifflines $rw $ro $startrw $startro
+            $rwtrim $rotrim $startrwtrim $startrotrim $rwtidy $rotidy
+            $rwdev $rwino $rwmode $rwlink $rwuid 
+            $rwgid $rwrdev $rwsize $rwatime 
+            $rwmtime $rwctime $rwblksize $rwblocks
+            $rodev $roino $romode $rolink $rouid 
+            $rogid $rordev $rosize $roatime 
+            $romtime $roctime $roblksize $roblocks
+            $rwexists $rwislink $rwisdir $rwismtpt $rwmtpt $rwacl $rwlsout
+            $roexists $roislink $roisdir $roismtpt $romtpt $roacl $rolsout
+            $rwmodeoctal $romodeoctal
+            $newloc $oldloc $newacl $oldacl
+           );
+
+
+use vars qw($opt_suppressdiffs $opt_maxdifflines $opt_leave2ndRW
+            $opt_changedir $opt_crossmountpoints %options);
 
 %options = (MaxDiffLines => 200);
 
-&GetOptions("suppressdiffs!","maxdifflines=i","leave2ndRW!");
+&GetOptions("suppressdiffs!","maxdifflines=i","leave2ndRW!",
+            "changedir=s","crossmountpoints");
 
 if ($opt_maxdifflines) { $options{'MaxDiffLines'} = $opt_maxdifflines; }
 $maxdifflines = $options{'MaxDiffLines'};
@@ -81,15 +100,44 @@ if ( $opt_leave2ndRW ) {
 
 $startrw = $rw;
 $startro = $ro;
+($startrwtrim = $startrw) =~ s:^(/afs/(\.)?ir)\.stanford\.edu:$1:;
+($startrotrim = $startro) =~ s:^(/afs/(\.)?ir)\.stanford\.edu:$1:;
+
+if ( $opt_changedir ) {
+    open(CHANGES,">$opt_changedir/changes.b") 
+        or die "Can't open changes bundle file\n";
+    open(REVERT, ">$opt_changedir/revert.b")  
+        or die "Can't open revert  bundle file\n";
+    open(APPLY,  ">$opt_changedir/apply.b")   
+        or die "Can't open apply   bundle file\n";
+    mkdir "$opt_changedir/old", 0755 or die "Can't mkdir old directory\n";
+    mkdir "$opt_changedir/new", 0755 or die "Can't mkdir new directory\n";
+
+    print CHANGES "ORIG=", bundle_quote($startrotrim), 
+                  "\nDEST=", bundle_quote($startrwtrim), "\n\n";
+    print REVERT  "ORIG=", bundle_quote($startrotrim), 
+                  "\nDEST=", bundle_quote($startrwtrim), "\n\n";
+    print APPLY   "ORIG=", bundle_quote($startrotrim), 
+                  "\nDEST=", bundle_quote($startrwtrim), "\n\n";
+}
 
 $| = 1;
+
+sub bundle_quote (@) {
+    my @arg = @_;
+    for ( @arg ) { s/([\\\"\'\$\s])/\\$1/g; s/(\\\n)/\'$1\'/g;
+                   s/^\\\$(ORIG|DEST)/\$$1/; }
+    return join(' ',@arg);
+}
 
 sub getacl ($) {
     my ($dir) = @_;
     my $acl = "";
     my $prefix = "";
+    my ($ptsentity, $permissions) = ("","");
     local $_;
-
+    
+    return "NOT_IN_AFS" unless ( $dir =~ /^\/afs/);
     open(LISTACL, "/usr/pubsw/bin/fs listacl $dir |") 
         or die "Unable to perform listacl on $dir: $!\n";
     while (<LISTACL>) {
@@ -104,12 +152,12 @@ sub getacl ($) {
     $acl =~ s/,$//;
     return $acl;
 }
-
+            
 sub modestr ($) {
     my ($mode) = @_;
     my $outstr = "?---------";
-
-#print "mode=:",$mode, ":\n";
+    
+    #print "mode=:",$mode, ":\n";
     if (($mode & $S_IFMT) == $S_IFDIR) { substr($outstr,0,1) = "d"; }
     elsif (($mode & $S_IFMT) == $S_IFLNK) { substr($outstr,0,1) = "l"; }
     elsif (($mode & $S_IFMT) == $S_IFBLK) { substr($outstr,0,1) = "b"; }
@@ -117,7 +165,7 @@ sub modestr ($) {
     elsif (($mode & $S_IFMT) == $S_IFNAM) { substr($outstr,0,1) = "p"; }
     elsif (($mode & $S_IFMT) == $S_IFREG) { substr($outstr,0,1) = "-"; }
     elsif (($mode & $S_IFMT) == $S_IFIFO) { substr($outstr,0,1) = "|"; }
-
+    
     if (($mode & $S_IAMB) & $S_IRUSR) { substr($outstr,1,1) = "r" }
     if (($mode & $S_IAMB) & $S_IWUSR) { substr($outstr,2,1) = "w" }
     if (($mode & $S_IAMB) & $S_IXUSR) { substr($outstr,3,1) = "x" }
@@ -140,15 +188,16 @@ sub modestr ($) {
         if ($mode & $S_IXOTH) { substr($outstr,9,1) = "t" }
         else { substr($outstr,3,1) = "T" }
     }
-
+    
     return $outstr;
 }
-
+                         
 sub lslout ($$$$$$$) {
     my ($mode, $link, $uid, $gid, $size, $mtime, $nodate) = @_;
     my $output;
-confess if "$mode" eq "";
-#print "lsloutmode=:",$mode,":\n";
+    return "---------- NO SUCH FILE????" unless defined($mode);
+    confess if "$mode" eq "";
+    #print "lsloutmode=:",$mode,":\n";
     my $modestr = modestr($mode);
     my $username = getpwuid($uid) || $uid;
     my $grname = getgrgid($gid) || $gid;
@@ -158,17 +207,23 @@ confess if "$mode" eq "";
     $output .= "   $lastchanged" unless $nodate;
     return $output;
 }
-
+                                     
 sub wantedrw {
     $rw = $File::Find::name;
     $ro = $rw;
     $ro =~ s:^\Q$startrw\E:$startro: ;
-    ($rwtrim = $rw) =~ s/\.stanford\.edu//;
+    ($rwtrim = $rw) =~ s:^(/afs/(\.)?ir)\.stanford\.edu:$1:;
+    ($rotrim = $ro) =~ s:^(/afs/(\.)?ir)\.stanford\.edu:$1:;
+    if ( $opt_changedir ) {
+        ($rotidy = $rotrim) =~ s:^\Q$startrotrim\E:\$ORIG:;
+        ($rwtidy = $rwtrim) =~ s:^\Q$startrwtrim\E:\$DEST:;
+    }
 
     ($rwdev,$rwino,$rwmode,$rwlink,$rwuid,
      $rwgid,$rwrdev,$rwsize,$rwatime,
      $rwmtime,$rwctime,$rwblksize,$rwblocks) = lstat($rw);
     $rwexists = (-e _);
+    $rwmodeoctal = sprintf("%lo", $rwmode & $S_IAMB) if $rwexists;
     $rwislink = (-l _);
     $rwlink = readlink ($rw) if $rwislink;
     $rwisdir  = (-d _);
@@ -179,11 +234,12 @@ sub wantedrw {
             if $rwismtpt;
         $rwacl = getacl($rw);
     }
-
+    
     ($rodev,$roino,$romode,$rolink,$rouid,
      $rogid,$rordev,$rosize,$roatime,
      $romtime,$roctime,$roblksize,$roblocks) = lstat($ro);
     $roexists = (-e _);
+    $romodeoctal = sprintf("%lo", $romode & $S_IAMB) if $roexists;
     $roislink = (-l _);
     $rolink = readlink ($ro) if $roislink;
     $roisdir  = (-d _);
@@ -194,54 +250,116 @@ sub wantedrw {
             if $roismtpt;
         $roacl = getacl($ro);
     }
-
+    
     if ( ! $roexists ) { # New things springing into existence
-        if ( $rwislink ) {      # New symlink
+        if ( $rwislink ) { # New symlink
             print "New link: $rwtrim\n";  
             print "  -> $rwlink\n";
-        } elsif ( $rwisdir ) {  # New directory or mountpoint
-            if ( $rwismtpt ) {  # New mountpoint
+            if ( $opt_changedir ) {
+                print REVERT bundle_quote('delete', $rwtidy), "\n";
+                print APPLY  bundle_quote('link', $rwlink, $rwtidy), "\n";
+            }
+        } elsif ( $rwisdir ) { # New directory or mountpoint
+            if ( $rwismtpt ) { # New mountpoint
                 print "New mountpoint: $rwtrim -> \#$rwmtpt\n";  
                 print "  ACL is: $rwacl\n";
                 if ( $rw ne $startrw ) { $File::Find::prune = 1; return; }
-            } else {            # Directory but not mountpoint
+                if ( $opt_changedir ) {
+                    print REVERT bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                              'rmm', $rwtidy), "\n";
+                    print APPLY  bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                              'mkm', $rwtidy, $rwmtpt), "\n"
+                }
+            } else { # Directory but not mountpoint
                 print "New directory: $rwtrim\n";
                 $rwlsout = lslout($rwmode,$rwlink,$rwuid,$rwgid,
                                   $rwsize,$rwmtime,0);
-
                 print "  $rwlsout\n";
                 print "  ACL is: $rwacl\n";
+                if ( $opt_changedir ) {
+                    ($newacl = $rwacl) =~ s/(=|,)/ /g;
+                    print REVERT bundle_quote('system', '/bin/rm', '-rf', 
+                                              $rwtidy), "\n";
+                    print APPLY  bundle_quote('dir', $rwtidy, "owner=$rwuid", 
+                                              "group=$rwgid", 
+                                              "mode=$rwmodeoctal", 
+                                              "atime=$rwatime", 
+                                              "mtime=$rwmtime"), "\n";
+                    print APPLY  bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                              'setacl', $rwtidy, split(' ',$newacl), 
+                                              '-clear'), "\n";
+                }
             }
-        } else {                # New, but not a link, dir, or mountpoint
+        } else { # New, but not a link, dir, or mountpoint
             print "New: $rwtrim\n";
             $rwlsout = lslout($rwmode,$rwlink,$rwuid,$rwgid,
                               $rwsize,$rwmtime,0);
             print "  $rwlsout\n";
+            if ( $opt_changedir ) {
+                $newloc = "new$rwtrim";
+                $newloc =~ s:^new\Q$startrwtrim\E:new:;
+                print CHANGES bundle_quote('file', $rwtidy, $newloc), "\n";
+                print REVERT  bundle_quote('delete', $rwtidy), "\n";
+                print APPLY   bundle_quote('file', $newloc, $rwtidy), "\n";
+            }
         }
     } elsif ( $rwislink ) {
         if ( $roislink ) {
             if ( $rwlink ne $rolink ) {
                 print "Link change: $rwtrim\n";
                 print "  Link WAS: $rolink\n  Link NOW: $rwlink\n";
+                if ( $opt_changedir ) {
+                    print REVERT bundle_quote('delete', $rwtidy), "\n";
+                    print REVERT bundle_quote('link', $rolink, $rwtidy), "\n";
+                    print APPLY  bundle_quote('delete', $rwtidy), "\n";
+                    print APPLY  bundle_quote('link', $rwlink, $rwtidy), "\n";
+                }
             }
         } elsif ( $roisdir ) {
             if ( $roismtpt ) {
                 print "Mountpoint replaced by link: $rwtrim\n";
                 print "  WAS: -> \#$romtpt\n";
                 print "  NOW: $rwlink\n";
+                if ( $opt_changedir ) {
+                    print REVERT bundle_quote('delete', $rwtidy), "\n";
+                    print REVERT bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                              'mkm', $rwtidy, $romtpt), "\n";
+                    print APPLY  bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                              'rmm', $rwtidy), "\n";
+                    print APPLY  bundle_quote('link', $rwlink, $rwtidy), "\n";
+                }
             } else { 
                 print "Directory replaced by link: $rwtrim\n";
                 $rolsout = lslout($romode,$rolink,$rouid,$rogid,
                                   $rosize,$romtime,0);
                 print "  WAS: $rolsout\n";
                 print "  NOW: $rwlink\n";
+                if ( $opt_changedir ) {
+                    print REVERT bundle_quote('delete', $rwtidy), "\n";
+                    print REVERT bundle_quote('dir', $rwtidy, "owner=$rouid", 
+                                              "group=$rogid", 
+                                              "mode=$romodeoctal", 
+                                              "atime=$rwatime", 
+                                              "mtime=$rwmtime"), "\n";
+                    print APPLY  bundle_quote('system', '/bin/rm', '-rf', 
+                                              $rwtidy), "\n";
+                    print APPLY  bundle_quote('link', $rwlink, $rwtidy), "\n";
+                }
             }
-        } else {                # Replaces link, not link, dir, or mountpoint
+        } else { # Replaces link, not link, dir, or mountpoint
             print "Non-link replaced by link: $rwtrim\n";
             $rolsout = lslout($romode,$rolink,$rouid,$rogid,
                               $rosize,$romtime,0);
             print "  WAS: $rolsout\n";
             print "  NOW: $rwlink\n";
+            if ( $opt_changedir ) {
+                $oldloc = "old$rwtrim";
+                $oldloc =~ s:^old\Q$startrwtrim\E:old:;
+                print CHANGES bundle_quote('file', $rotidy, $oldloc), "\n";
+                print REVERT  bundle_quote('file', $oldloc, $rwtidy), "\n";
+                print APPLY   bundle_quote('delete', $rwtidy), "\n";
+                print APPLY   bundle_quote('link', $rwlink, $rwtidy), "\n";
+            }
         } 
     } elsif ( $rwisdir ) {
         if ( $rwismtpt ) {
@@ -249,48 +367,140 @@ sub wantedrw {
                 print "Link replaced by mountpoint: $rwtrim\n";
                 print "  WAS: $rolink\n";
                 print "  NOW: -> \#$rwmtpt\n";
-                if ( $rw ne $startrw ) { $File::Find::prune = 1; return; }
+                if ( $opt_changedir ) {
+                    print REVERT bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                              'rmm', $rwtidy), "\n";
+                    print REVERT bundle_quote('link', $rolink, $rwtidy), "\n";
+                    print APPLY  bundle_quote('delete', $rwtidy), "\n";
+                    print APPLY  bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                              'mkm', $rwtidy, $rwmtpt), "\n"
+                }
+                if ( $rw ne $startrw && ! $opt_crossmountpoints ) 
+                    { $File::Find::prune = 1; return; }
             } elsif ( $roisdir ) {
                 if ( $roismtpt ) {
                     if ( $rwmtpt ne $romtpt ) {
                         print "Mountpoint change: $rwtrim\n";
                         print "  WAS: -> $romtpt\n";
                         print "  NOW: -> $rwmtpt\n";
+                        if ( $opt_changedir && $rw ne $startrw ) {
+                            print REVERT 
+                                bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                             'rmm', $rwtidy), "\n";
+                            print REVERT
+                                bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                             'mkm', $rwtidy, $romtpt), "\n";
+                            print APPLY 
+                                bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                             'rmm', $rwtidy), "\n";
+                            print APPLY  
+                                bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                             'mkm', $rwtidy, $rwmtpt), "\n";
+                        }
                     }
-                    if ( $rw eq $startrw && $rwacl ne $roacl ) {
+                    if ( ( $rw eq $startrw || $opt_crossmountpoints )
+                         && $rwacl ne $roacl ) {
                         print "ACL changed: $rwtrim\n";
                         print "  ACL WAS: $roacl\n";
                         print "  ACL NOW: $rwacl\n";
+                        if ( $opt_changedir ) {
+                            ($newacl = $rwacl) =~ s/(=|,)/ /g;
+                            ($oldacl = $roacl) =~ s/(=|,)/ /g;
+                            print REVERT 
+                                bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                             'setacl', $rwtidy, split(' ',$oldacl), 
+                                             '-clear'), "\n";
+                            print APPLY  
+                                bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                             'setacl', $rwtidy, split(' ',$newacl), 
+                                             '-clear'), "\n";
+                        }
                     }
-                    if ( $rw ne $startrw ) { $File::Find::prune = 1; return; }
-                } else {        # RW is mtpt, RO is regular dir
+                    if ( $rw ne $startrw && ! $opt_crossmountpoints ) 
+                        { $File::Find::prune = 1; return; }
+                } else { # RW is mtpt, RO is regular dir
                     print "Directory replaced by mountpoint: $rwtrim\n";
                     $rolsout = lslout($romode,$rolink,$rouid,$rogid,
                                       $rosize,$romtime,0);
                     print "  WAS: $rolsout\n";
                     print "  NOW: -> \#$rwmtpt\n";
-                    if ( $rw ne $startrw ) { $File::Find::prune = 1; return; }
+                    if ( $opt_changedir ) {
+                        print REVERT 
+                            bundle_quote('system', '/usr/pubsw/bin/fs', 'rmm', 
+                                         $rwtidy), "\n";
+                        print REVERT 
+                            bundle_quote('dir', $rwtidy, "owner=$rouid", 
+                                         "group=$rogid", "mode=$romodeoctal", 
+                                         "atime=$roatime", "mtime=$romtime"), 
+                            "\n";
+                        print APPLY  bundle_quote('system', '/bin/rm', '-rf', 
+                                                  $rwtidy), "\n";
+                        print APPLY
+                            bundle_quote('system', '/usr/pubsw/bin/fs', 'mkm', 
+                                         $rwtidy, $rwmtpt), "\n";
+                    }
+                    if ( $rw ne $startrw && ! $opt_crossmountpoints ) 
+                        { $File::Find::prune = 1; return; }
                 }
-            } else {            # RW is mtpt, RO neither link, dir or mtpt
+            } else { # RW is mtpt, RO neither link, dir or mtpt
                 print "File replaced by mountpoint: $rwtrim\n";
                 $rolsout = lslout($romode,$rolink,$rouid,$rogid,
                                   $rosize,$romtime,0);
                 print "  WAS: $rolsout\n";
                 print "  NOW: -> \#$rwmtpt\n";
-                if ( $rw ne $startrw ) { $File::Find::prune = 1; return; }
+                if ( $opt_changedir ) {
+                    $oldloc = "old$rwtrim";
+                    $oldloc =~ s:^old\Q$startrwtrim\E:old:;
+                    print CHANGES bundle_quote('file', $rotidy, $oldloc), "\n";
+                    print REVERT 
+                        bundle_quote('system', '/usr/pubsw/bin/fs', 'rmm', 
+                                     $rwtidy), "\n";
+                    print REVERT  bundle_quote('file', $oldloc, $rwtidy), "\n";
+                    print APPLY   bundle_quote('delete', $rwtidy), "\n";
+                    print APPLY
+                        bundle_quote('system', '/usr/pubsw/bin/fs', 'mkm', 
+                                     $rwtidy, $rwmtpt), "\n";
+                }
+                if ( $rw ne $startrw && ! $opt_crossmountpoints ) 
+                    { $File::Find::prune = 1; return; }
             }
-        } else {                # RW is Regular directory, not mountpoint
+        } else { # RW is Regular directory, not mountpoint
             $rwlsout = lslout($rwmode,$rwlink,$rwuid,$rwgid,
                               $rwsize,$rwmtime,0);
             if ( $roislink ) {
                 print "Link replaced by directory: $rwtrim\n";
                 print "  WAS: $rolink\n";
                 print "  NOW: $rwlsout\n";
+                if ( $opt_changedir ) {
+                    print REVERT  bundle_quote('system', '/bin/rm', '-rf', 
+                                               $rwtidy), "\n";
+                    print REVERT  bundle_quote('link', $rolink, $rwtidy), "\n";
+                    print APPLY   bundle_quote('delete', $rwtidy), "\n";
+                    print APPLY   
+                        bundle_quote('dir', $rwtidy, "owner=$rwuid", 
+                                     "group=$rwgid", "mode=$rwmodeoctal", 
+                                     "atime=$rwatime", "mtime=$rwmtime"), "\n";
+                }
             } elsif ( $roisdir ) { # RW is regular dir, RO is dir
                 if ( $roismtpt ) { # RW regular dir, RO mtpt
                     print "Mountpoint replaced by directory: $rwtrim\n";
                     print "  WAS: -> \#$romtpt\n";
                     print "  NOW: $rwlsout\n";
+                    if ( $opt_changedir ) {
+                        print REVERT bundle_quote('system', '/bin/rm', '-rf', 
+                                                  $rwtidy), "\n";
+                        print REVERT
+                            bundle_quote('system', '/usr/pubsw/bin/fs', 'mkm', 
+                                         $rwtidy, $romtpt), "\n";
+                        print APPLY 
+                            bundle_quote('system', '/usr/pubsw/bin/fs', 'rmm', 
+                                         $rwtidy), "\n";
+                        print APPLY 
+                            bundle_quote('dir', $rwtidy, "owner=$rwuid", 
+                                         "group=$rwgid", "mode=$rwmodeoctal", 
+                                         "atime=$rwatime", "mtime=$rwmtime"), 
+                            "\n";
+                    }
                 } else {        # RW and RO are both regular directories
                     $rwlsout = lslout($rwmode,$rwlink,$rwuid,$rwgid,
                                       $rwsize,$rwmtime,1);
@@ -300,19 +510,62 @@ sub wantedrw {
                         print "Changed (dirs): $rwtrim\n";
                         print "  WAS: $rolsout\n";
                         print "  NOW: $rwlsout\n";
+                        if ( $opt_changedir ) {
+                            print REVERT bundle_quote('dir', $rwtidy,
+                                                      "owner=$rouid",
+                                                      "group=$rogid",
+                                                      "mode=$romodeoctal",
+                                                      "atime=$roatime",
+                                                      "mtime=$romtime"), 
+                            "\n";
+                            print APPLY  bundle_quote('dir', $rwtidy,
+                                                      "owner=$rwuid",
+                                                      "group=$rwgid",
+                                                      "mode=$rwmodeoctal",
+                                                      "atime=$rwatime",
+                                                      "mtime=$rwmtime"), 
+                            "\n";
+                        }
                     }
                 }
                 if ( $rwacl ne $roacl ) {
                     print "ACL changed: $rwtrim\n";
                     print "  ACL WAS: $roacl\n";
                     print "  ACL NOW: $rwacl\n";
+                    if ( $opt_changedir ) {
+                        ($newacl = $rwacl) =~ s/(=|,)/ /g;
+                        ($oldacl = $roacl) =~ s/(=|,)/ /g;
+                        print REVERT 
+                            bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                         'setacl', $rwtidy, split(' ',$oldacl), 
+                                         '-clear'), "\n";
+                        print APPLY  
+                            bundle_quote('system', '/usr/pubsw/bin/fs', 
+                                         'setacl', $rwtidy, split(' ',$newacl), 
+                                         '-clear'), "\n";
+                    }
                 }
-            } else {            # RW is regular dir, RO is neither link, dir, or mtpt
+            } else {  # RW is regular dir, RO is neither link, dir, or mtpt
                 print "File replaced by directory: $rwtrim\n";
-                $rolsout = lslout($romode,$rolink,$rouid,$rogid,$rosize,$romtime,0);
+                $rolsout = lslout($romode,$rolink,$rouid,$rogid,
+                                  $rosize,$romtime,0);
                 print "  WAS: $rolsout\n";
-                print "  NOW: $rwlsout\n"
+                print "  NOW: $rwlsout\n";
+                if ( $opt_changedir ) {
+                    $oldloc = "old$rwtrim";
+                    $oldloc =~ s:^old\Q$startrwtrim\E:old:;
+                    print CHANGES bundle_quote('file', $rotidy, $oldloc), "\n";
+                    print REVERT  bundle_quote('system', '/bin/rm', '-rf', 
+                                               $rwtidy), "\n";
+                    print REVERT  bundle_quote('file', $oldloc, $rwtidy), "\n";
+                    print APPLY   bundle_quote('delete', $rwtidy), "\n";
+                    print APPLY   bundle_quote('dir', $rwtidy, "owner=$rwuid", 
+                                               "group=$rwgid", 
+                                               "mode=$rwmodeoctal", 
+                                               "atime=$rwatime", 
+                                               "mtime=$rwmtime"), "\n";
                 }
+            }
         } 
     } else {                    # RW is not link, directory, or mountpoint
         $rwlsout = lslout($rwmode,$rwlink,$rwuid,$rwgid,$rwsize,$rwmtime,0);
@@ -320,14 +573,49 @@ sub wantedrw {
             print "Link replaced by non-link: $rwtrim\n";
             print "  WAS: $rolink\n";
             print "  NOW: $rwlsout\n";
+            if ( $opt_changedir ) {
+                $newloc = "new$rwtrim";
+                $newloc =~ s:^new\Q$startrwtrim\E:new:;
+                print CHANGES bundle_quote('file', $rwtidy, $newloc), "\n";
+                print REVERT  bundle_quote('delete', $rwtidy), "\n";
+                print REVERT  bundle_quote('link', $rolink, $rwtidy), "\n";
+                print APPLY   bundle_quote('delete', $rwtidy), "\n";
+                print APPLY   bundle_quote('file', $newloc, $rwtidy), "\n";
+            }
         } elsif ( $roisdir ) {  # RW is file, RO is dir or mtpt
             if ( $roismtpt ) {  # RW is file, RO is mountpoint
                 print "Mountpoint replaced by non-mountpoint: $rwtrim\n";
                 print "  WAS: -> \#$romtpt\n";
+                if ( $opt_changedir ) {
+                    $newloc = "new$rwtrim";
+                    $newloc =~ s:^new\Q$startrwtrim\E:new:;
+                    print CHANGES bundle_quote('file', $rwtidy, $newloc), "\n";
+                    print REVERT  bundle_quote('delete', $rwtidy), "\n";
+                    print REVERT
+                        bundle_quote('system', '/usr/pubsw/bin/fs', 'mkm', 
+                                     $rwtidy, $romtpt), "\n";
+                    print APPLY 
+                        bundle_quote('system', '/usr/pubsw/bin/fs', 'rmm', 
+                                     $rwtidy), "\n";
+                    print APPLY   bundle_quote('file', $newloc, $rwtidy), "\n";
+                }
             } else {            # RW is file, RO is regular dir
                 $rolsout = lslout($romode,$rolink,$rouid,$rogid,$rosize,$romtime,0);
                 print "Directory replaced by non-directory: $rwtrim\n";
                 print "  WAS: $rolsout\n";
+                if ( $opt_changedir ) {
+                    $newloc = "new$rwtrim";
+                    $newloc =~ s:^new\Q$startrwtrim\E:new:;
+                    print CHANGES bundle_quote('file', $rwtidy, $newloc), "\n";
+                    print REVERT  bundle_quote('delete', $rwtidy), "\n";
+                    print REVERT  
+                        bundle_quote('dir', $rwtidy, "owner=$rouid", 
+                                     "group=$rogid", "mode=$romodeoctal", 
+                                     "atime=$roatime", "mtime=$romtime"), "\n";
+                    print APPLY   bundle_quote('system', '/bin/rm', '-rf', 
+                                               $rwtidy), "\n";
+                    print APPLY   bundle_quote('file', $newloc, $rwtidy), "\n";
+                }
             }
             print "  NOW: $rwlsout\n";
         } else {                # RW is file, RO is too.
@@ -338,7 +626,7 @@ sub wantedrw {
                 print "  NOW: $rwlsout\n";
                 if (!$opt_suppressdiffs && -T $rw && -T $ro) {
                     local $_;
-                    local @diffs = ();
+                    my @diffs = ();
                     
                     open(DIFFOUT, "/usr/pubsw/bin/diff -u \Q$ro\E \Q$rw\E |") 
                         or die "Can't fork diff: $!\n";
@@ -353,11 +641,24 @@ sub wantedrw {
                     if ($. >= $maxdifflines) {
                         print "    LARGE diff output suppressed, $. lines\n";
                     } else {
+                        my $line;
                         foreach $line (@diffs) {
                             print $line;
                         }
                     }
                     close(DIFFOUT);
+                }
+                if ( $opt_changedir ) {
+                    $oldloc = "old$rwtrim";
+                    $oldloc =~ s:^old\Q$startrwtrim\E:old:;
+                    $newloc = "new$rwtrim";
+                    $newloc =~ s:^new\Q$startrwtrim\E:new:;
+                    print CHANGES bundle_quote('file', $rotidy, $oldloc), "\n";
+                    print CHANGES bundle_quote('file', $rwtidy, $newloc), "\n";
+                    print REVERT  bundle_quote('delete', $rwtidy), "\n";
+                    print REVERT  bundle_quote('file', $oldloc, $rwtidy), "\n";
+                    print APPLY   bundle_quote('delete', $rwtidy), "\n";
+                    print APPLY   bundle_quote('file', $newloc, $rwtidy), "\n";
                 }
             }
         }
@@ -368,23 +669,31 @@ sub wantedro {
     $ro = $File::Find::name;
     $rw = $ro;
     $rw =~ s:^\Q$startro\E:$startrw: ;
-    ($rotrim = $ro) =~ s/\.stanford\.edu//;
+    ($rwtrim = $rw) =~ s:^(/afs/(\.)?ir)\.stanford\.edu:$1:;
+    ($rotrim = $ro) =~ s:^(/afs/(\.)?ir)\.stanford\.edu:$1:;
+    if ( $opt_changedir ) {
+        ($rotidy = $rotrim) =~ s:^\Q$startrotrim\E:\$ORIG:;
+        ($rwtidy = $rwtrim) =~ s:^\Q$startrwtrim\E:\$DEST:;
+    }
 
     ($rwdev,$rwino,$rwmode,$rwlink,$rwuid,
      $rwgid,$rwrdev,$rwsize,$rwatime,
      $rwmtime,$rwctime,$rwblksize,$rwblocks) = lstat($rw);
     $rwexists = (-e _);
+    $rwmodeoctal = sprintf("%lo", $rwmode & $S_IAMB) if $rwexists;
     ($rodev,$roino,$romode,$rolink,$rouid,
      $rogid,$rordev,$rosize,$roatime,
      $romtime,$roctime,$roblksize,$roblocks) = lstat($ro);
     $roexists = (-e _);
+    $romodeoctal = sprintf("%lo", $romode & $S_IAMB) if $roexists;
     $roislink = (-l _);
     $rolink = readlink($ro) if $roislink;
     $roisdir = (-d _);
     if ($roisdir) {
         $romtpt = `/usr/pubsw/bin/fs lsmount $ro  2>&1`;
         $roismtpt = ( $? == 0 ) ;
-        $romtpt =~ s/.*a mount point for volume \'\#(\S+)\'/$1/ if $roismtpt;
+        $romtpt =~ s/.*a mount point for volume \'\#(\S+)\'\s+$/$1/ 
+            if $roismtpt;
     }
 
 
@@ -392,22 +701,51 @@ sub wantedro {
         if ( $roislink ) {
             print "Deleted link: $rotrim\n" ;
             print "  -> $rolink\n";
+            if ( $opt_changedir ) {
+                print REVERT  bundle_quote('link', $rolink, $rwtidy), "\n";
+                print APPLY   bundle_quote('delete', $rwtidy), "\n";
+            }
         } elsif ( $roisdir ) {
             if ( $roismtpt ) {
                 print "Deleted mountpoint: $rotrim -> \#$romtpt\n";  
-                if ( $ro ne $startro ) { $File::Find::prune = 1; return; }
+                if ( $opt_changedir ) {
+                    print REVERT  
+                        bundle_quote('system', '/usr/pubsw/bin/fs', 'mkm', 
+                                     $rwtidy, $romtpt), "\n";
+                    print APPLY 
+                        bundle_quote('system', '/usr/pubsw/bin/fs', 'rmm', 
+                                     $rwtidy), "\n";
+                }
+                if ( $ro ne $startro && ! $opt_crossmountpoints ) 
+                    { $File::Find::prune = 1; return; }
             } else {
                 print "Deleted directory: $rotrim\n";
 #                $rolsout = lslout($romode,$rolink,$rouid,$rogid,$rosize,$romtime,0);
 #                print "  $rolsout\n";
+                if ( $opt_changedir ) {
+                    print REVERT   
+                        bundle_quote('dir', $rwtidy, "owner=$rouid", 
+                                     "group=$rogid", "mode=$romodeoctal", 
+                                     "atime=$roatime", "mtime=$romtime"), "\n";
+                    print APPLY    bundle_quote('system', '/bin/rm', '-rf', 
+                                                $rwtidy), "\n";
+                }
             }
         } else {
             print "Deleted: $rotrim\n";
 #            $rolsout = lslout($romode,$rolink,$rouid,$rogid,$rosize,$romtime,0);
 #            print "  $rolsout\n";
+            if ( $opt_changedir ) {
+                $oldloc = "old$rwtrim";
+                $oldloc =~ s:^old\Q$startrwtrim\E:old:;
+                print CHANGES bundle_quote('file', $rotidy, $oldloc), "\n";
+                print REVERT  bundle_quote('file', $oldloc, $rwtidy), "\n";
+                print APPLY   bundle_quote('delete', $rwtidy), "\n";
+            }
         }
     } elsif ( $roisdir && $roismtpt ) {
-        if ( $ro ne $startro ) { $File::Find::prune = 1; return; }
+        if ( $ro ne $startro && ! $opt_crossmountpoints ) 
+            { $File::Find::prune = 1; return; }
     }
 }
 
@@ -417,3 +755,20 @@ find(\&wantedrw, $startrw);
 print "\n";
 find(\&wantedro, $startro);
 print "\n";
+
+if ( $opt_changedir) {
+    close(CHANGES);
+    close(REVERT);
+    close(APPLY);
+}
+__END__
+
+############################################################################
+# Documentation
+############################################################################
+
+=head1 NAME
+
+frak - Show changes between two software trees
+
+=cut
