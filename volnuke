@@ -4,7 +4,7 @@ $ID = q$Id$;
 # volnuke -- Delete a volume, tracking down what servers it's on.
 #
 # Written by Russ Allbery <rra@stanford.edu>
-# Copyright 2002 Board of Trustees, Leland Stanford Jr. University
+# Copyright 2002, 2003 Board of Trustees, Leland Stanford Jr. University
 #
 # A smart and dangerous vos remove, but one that prompts you to be sure you're
 # doing what you intend.  Deletes a volume without having to know the volume's
@@ -107,9 +107,10 @@ sub usage { die "Usage: $0 <volume>\n" }
 # Parse our options.
 my $fullpath = $0;
 $0 =~ s%.*/%%;
-my ($file, $help, $justprint, $mountpoint, $version);
+my ($file, $force, $help, $justprint, $mountpoint, $version);
 Getopt::Long::config ('bundling', 'no_ignore_case');
 GetOptions ('file|f=s'             => \$file,
+            'force|F'              => \$force,
             'help|h'               => \$help,
             'mountpoint|m'         => \$mountpoint,
             'dry-run|just-print|n' => \$justprint,
@@ -144,19 +145,26 @@ print "\n";
 for (keys %{ $volume{ro} }) {
     print "  replica on $_ $volume{ro}{$_}\n";
 }
-print "\nContinue (y/N)? ";
-my $response = <STDIN>;
-exit if ($response !~ /^y/i);
-print "\n";
+unless ($force) {
+    print "\nContinue (y/N)? ";
+    my $response = <STDIN>;
+    exit if ($response !~ /^y/i);
+    print "\n";
+}
 if ($volume{accesses} && grep { $_ != 0 } @{ $volume{accesses} }) {
     print "WARNING: Replica sites have accesses:\n\n";
     for (@{ $volume{accesses} }) {
         printf "  %6d accesses in the past day\n", $_;
     }
-    print "\nAre you SURE you want to continue (y/N)? ";
-    $response = <STDIN>;
-    exit if ($response !~ /^y/i);
-    print "\n";
+    if ($force) {
+        print "\nCowardly refusing to delete with --force in effect\n";
+        exit 1;
+    } else {
+        print "\nAre you SURE you want to continue (y/N)? ";
+        my $response = <STDIN>;
+        exit if ($response !~ /^y/i);
+        print "\n";
+    }
 }
 
 # Now build the list of commands to run to remove the volume.
@@ -196,9 +204,9 @@ volnuke -- Delete a volume, tracking down what servers it's on
 
 =head1 SYNOPSIS
 
-volnuke [B<-hvn>] [B<-f> I<list-file>] I<volume>
+volnuke [B<-Fhvn>] [B<-f> I<list-file>] I<volume>
 
-volnuke [B<-n>] [B<-f> I<list-file>] B<-m> I<mountpoint>
+volnuke [B<-Fn>] [B<-f> I<list-file>] B<-m> I<mountpoint>
 
 =head1 DESCRIPTION
 
@@ -215,6 +223,11 @@ lsmount>, and then removes that mount point when it finishes.
 =head1 OPTIONS
 
 =over 4
+
+=item B<-F>, B<--force>
+
+Don't prompt before deleting the volume.  This option is NOT RECOMMENDED and
+is here solely for sysctl/remctl backend scripts.
 
 =item B<-f> I<list-file>, B<--file>=I<list-file>
 
