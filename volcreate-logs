@@ -4,10 +4,13 @@ $ID = q$Id$;
 # afs-manage-logs -- Create and grant quota to log volumes in AFS.
 #
 # Written by Russ Allbery <rra@stanford.edu>
-# Copyright 2002 Board of Trustees, Leland Stanford Jr. University
+# Copyright 2002, 2004 Board of Trustees, Leland Stanford Jr. University
+#
+# This program is free software; you may redistribute it and/or modify it
+# under the same terms as Perl itself.
 
 ##############################################################################
-# Modules and declarations
+# Site configuration
 ##############################################################################
 
 # The address to which to send mailed reports.
@@ -19,14 +22,22 @@ $CONFIG = '/afs/ir/service/afs/data/log-volumes';
 # The path to volcreate, used to create volumes.
 $VOLCREATE = '/afs/ir/service/afs/scripts/volcreate';
 
-# Set the path to make sure that programs we execute can find the AFS
-# programs.
-$ENV{PATH} = "/usr/pubsw/bin:$ENV{PATH}";
+# The full path to fs and vos.  Allow for Linux where the preferred location
+# may be on local disk.
+($FS)  = grep { -x $_ } qw(/usr/bin/fs /usr/afsws/bin/fs /usr/pubsw/bin/fs);
+$FS ||= '/usr/afsws/bin/fs';
+($VOS) = grep { -x $_ } qw(/usr/bin/vos /usr/pubsw/bin/vos);
+$VOS ||= '/usr/pubsw/bin/vos';
+
+##############################################################################
+# Modules and declarations
+##############################################################################
 
 require 5.005;
 
 use strict;
-use vars qw($ADDRESS $CONFIG $ID $JUSTPRINT $MAIL $MAILOPEN $VOLCREATE);
+use vars qw($ADDRESS $CONFIG $FS $ID $JUSTPRINT $MAIL $MAILOPEN $VOLCREATE
+            $VOS);
 use subs qw(system);
 
 use Getopt::Long qw(GetOptions);
@@ -51,20 +62,25 @@ sub system {
 # Reporting
 ##############################################################################
 
+# Start a mail message to $ADDRESS on the MAIL file descriptor.
+sub start_mail {
+    my ($sendmail) = grep { -x $_ } qw(/usr/sbin/sendmail /usr/lib/sendmail);
+    $sendmail ||= '/usr/lib/sendmail';
+    my $date = strftime ("%Y-%m-%d", localtime);
+    open (MAIL, "| $sendmail -t -oi -oem")
+        or die "Cannot fork $sendmail: $!\n";
+    print MAIL "To: $ADDRESS\n";
+    print MAIL "Subject: Log volume report ($date)\n";
+    print MAIL "\n";
+    $MAILOPEN = 1;
+}
+
 # Report an action.  Checks $MAIL to see if the report should be via e-mail,
 # and if so, checks $MAILOPEN to see if we've already started the mail
 # message.
 sub report {
     if ($MAIL) {
-        unless ($MAILOPEN) {
-            my $date = strftime ("%Y-%m-%d", localtime);
-            open (MAIL, '| /usr/lib/sendmail -t -oi -oem')
-                or die "Cannot fork sendmail: $!\n";
-            print MAIL "To: $ADDRESS\n";
-            print MAIL "Subject: Log volume report ($date)\n";
-            print MAIL "\n";
-            $MAILOPEN = 1;
-        }
+        start_mail unless $MAILOPEN;
         print MAIL @_;
     } else {
         print @_;
@@ -82,7 +98,7 @@ sub report {
 sub check_quota {
     my ($volume, $mountpoint, $minimum) = @_;
     $minimum *= 1000;
-    my @listquota = `/usr/afsws/bin/fs listquota $mountpoint 2>&1`;
+    my @listquota = `$FS listquota $mountpoint 2>&1`;
 
     # The first line is always headers, so ignore it.  The second line is
     # either an error message or our quota information, in the form volume
@@ -94,7 +110,7 @@ sub check_quota {
         return;
     }
     my ($volname, $quota, $used, $percent) = split (' ', $listquota[0]);
-    unless ($percent =~ s/%(<<)?$//) {
+    unless ($percent =~ s/%(<\<)?$//) {
         warn "Unable to parse: $listquota[0]";
         warn "Unable to get quota information for $volume\n";
         return;
@@ -106,9 +122,8 @@ sub check_quota {
     $newquota = $minimum if ($newquota < $minimum);
     if ($newquota != $quota) {
         report "Setting quota to ", $newquota / 1000, "MB for $volume\n";
-        if (system ('/usr/afsws/bin/fs', 'setquota', $mountpoint,
-                    $newquota) != 0) {
-            warn "fs setquota $mountpoint $newquota exited with status ",
+        if (system ($FS, 'setquota', $mountpoint, $newquota) != 0) {
+            warn "$FS setquota $mountpoint $newquota exited with status ",
                 ($? >> 8), "\n";
             warn "Unable to set quota for $volume\n";
         }
@@ -123,7 +138,10 @@ sub check_quota {
 # this path isn't a mount point.
 sub lsmount {
     my ($path) = @_;
-    my $volume = `/usr/afsws/bin/fs lsmount $path 2>&1`;
+    if ($path =~ /[\\\';]/) {
+        die "$0: invalid character in $path\n";
+    }
+    my $volume = `$FS lsmount '$path' 2>&1`;
     if ($volume =~ /is a mount point for volume \'\#([^\']+)\'/) {
         return $1;
     } else {
@@ -176,7 +194,7 @@ sub create_volume {
         warn "$volume not created: $mountpoint already exists\n";
         return;
     }
-    if (!$JUSTPRINT && system ("vos examine $volume >/dev/null 2>&1") == 0) {
+    if (!$JUSTPRINT && system ("$VOS examine $volume >/dev/null 2>&1") == 0) {
         warn "$volume not created: volume already exists\n";
         return;
     }
@@ -474,5 +492,12 @@ L<http://www.eyrie.org/~eagle/software/newsyslog/>.
 =head1 AUTHOR
 
 Russ Allbery <rra@stanford.edu>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 2002, 2004 Board of Trustees, Leland Stanford Jr. University.
+
+This program is free software; you may redistribute it and/or modify it
+under the same terms as Perl itself.
 
 =cut
