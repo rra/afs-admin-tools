@@ -387,6 +387,15 @@ die "Mount point must begin with /afs/.ir/\n" unless $mtpt =~ m%^/afs/.ir/%;
 # the mount point database.
 $mtpt =~ s%/+$%%;
 
+# Make sure the parent directory of the mount point exists and the mount point
+# doesn't already exist.
+die "Mount point $mtpt already exists\n" if -e $mtpt;
+my $parent = $mtpt;
+if ($parent =~ s%/[^/]+$%%) {
+    die "Parent directory of mount point $mtpt doesn't exist\n"
+        unless -d $parent;
+}
+
 # Canonify AFS server name and find the exact partition on which to create the
 # read/write volume.
 my @ros;
