@@ -187,11 +187,12 @@ sub find_volume_year {
 # Creating volumes
 ##############################################################################
 
-# Given a volume name, mount point, and quota, create that volume.  Performs
-# some basic consistency checks to make sure that the quota isn't too large
-# and that the volume or mount point don't already exist.
+# Given a volume name, mount point, quota, and flag saying whether to be
+# quiet, create that volume.  Performs some basic consistency checks to make
+# sure that the quota isn't too large and that the volume or mount point don't
+# already exist.
 sub create_volume {
-    my ($volume, $mountpoint, $quota) = @_;
+    my ($volume, $mountpoint, $quota, $quiet) = @_;
     if ($quota > 5000) {
         warn "$volume not created: ${quota}MB exceeds maximum of 5GB\n";
         return;
@@ -207,7 +208,9 @@ sub create_volume {
     }
 
     # Create the volume.
-    if (system ($VOLCREATE, qw/-t logs/, $volume, $quota, $mountpoint) != 0) {
+    my @command = ('-t', 'logs', $volume, $quota, $mountpoint);
+    unshift (@command, '-q') if $quiet;
+    if (system ($VOLCREATE, @command) != 0) {
         warn "$VOLCREATE -t logs $volume $quota $mountpoint exited with",
             " status ", ($? >> 8), "\n";
         warn "$volume not fully created, please check\n";
@@ -231,10 +234,11 @@ sub create_month_dirs {
     }
 }
 
-# Given a year, month, and configuration hash for a log volume, make sure that
-# a volume for that year and month already exists.  If it doesn't, create it.
+# Given a year, month, configuration hash for a log volume, and flag saying
+# whether to be quiet, make sure that a volume for that year and month already
+# exists.  If it doesn't, create it.
 sub create_log_volume {
-    my ($year, $month, $config) = @_;
+    my ($year, $month, $config, $quiet) = @_;
     my ($path, $volume);
     if ($$config{type} eq 'monthly') {
         $path = sprintf ("$$config{path}/%04d/%02d", $year, $month);
@@ -253,7 +257,7 @@ sub create_log_volume {
         $volume = sprintf ("%s.%04d", $$config{name}, $year);
     }
     if (!-d $path) {
-        create_volume ($volume, $path, $$config{quota});
+        create_volume ($volume, $path, $$config{quota}, $quiet);
         create_month_dirs ($path) if $$config{type} eq 'yearly';
     }
 }
@@ -323,12 +327,13 @@ sub parse_config {
 ##############################################################################
 
 # Parse command line options.
-my ($help, $ticket, $version);
+my ($help, $quiet, $ticket, $version);
 Getopt::Long::config ('bundling', 'no_ignore_case');
 GetOptions ('n|dry-run|just-print' => \$JUSTPRINT,
             'h|help'               => \$help,
             'k|ticket-cache=s'     => \$ticket,
             'm|mail'               => \$MAIL,
+            'q|quiet'              => \$quiet,
             'v|version'            => \$version) or exit 1;
 if ($help) {
     print "Feeding myself to perldoc, please wait....\n";
@@ -386,7 +391,7 @@ for my $config (@config) {
     if ($path) {
         check_quota ($volume, $path, $$config{quota});
     } else {
-        create_log_volume ($year, $month, $config);
+        create_log_volume ($year, $month, $config, $quiet);
     }
     if ($day >= 20) {
         my $month = $month;
@@ -396,7 +401,7 @@ for my $config (@config) {
             $month = 1;
             $year++;
         }
-        create_log_volume ($year, $month, $config);
+        create_log_volume ($year, $month, $config, $quiet);
     }
 }
 
@@ -412,7 +417,7 @@ volcreate-logs - Create and grant quota to log volumes in AFS
 
 =head1 SYNOPSIS
 
-B<volcreate-logs> [B<-hmnv>] [B<-k> I<ticket-cache>]
+B<volcreate-logs> [B<-hmnqv>] [B<-k> I<ticket-cache>]
 
 =head1 DESCRIPTION
 
@@ -478,6 +483,11 @@ afs-reports@lists.stanford.edu (configured at the top of this program).
 
 Don't take any action other than inspection.  Instead, just print to
 standard out each command that would be executed.
+
+=item B<-q>, B<--quiet>
+
+Suppress any additional output other than the one line per action taken
+(done mostly by adding the B<-q> option to B<volcreate>).
 
 =item B<-v>, B<--version>
 
