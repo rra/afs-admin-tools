@@ -180,6 +180,8 @@ sub wantedrw {
                 } else {        # RW and RO are both regular directories
                     $rolsout = `/bin/ls -ld \Q$ro\E`;
                     $rolsout =~ s/ \S+\s+$//;
+                    $rwlsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+).*/$1/;
+                    $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+).*/$1/;
                     if ( $rwlsout ne $rolsout ) {
                         print "Changed (dirs): $rwtrim\n";
                         print "  WAS: $rolsout\n";
