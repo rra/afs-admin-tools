@@ -145,8 +145,8 @@ sub wantedrw {
                     }
                     if ( $rwacl ne $roacl ) {
                         print "ACL changed: $rwtrim\n";
-                        print "  WAS: $roacl\n";
-                        print "  NOW: $rwacl\n";
+                        print "  ACL WAS: $roacl\n";
+                        print "  ACL NOW: $rwacl\n";
                     }
                     if ( $rw ne $startrw ) { $File::Find::prune = 1; return; }
                 } else {        # RW is mtpt, RO is regular dir
@@ -174,7 +174,7 @@ sub wantedrw {
                 print "  NOW: $rwlsout\n";
             } elsif ( $roisdir ) { # RW is regular dir, RO is dir
                 if ( $roismtpt ) { # RW regular dir, RO mtpt
-                    print "Mountpoint replaced by non-mountpoint: $rwtrim\n";
+                    print "Mountpoint replaced by directory: $rwtrim\n";
                     print "  WAS: -> \#$romtpt\n";
                     print "  NOW: $rwlsout\n";
                 } else {        # RW and RO are both regular directories
@@ -188,8 +188,8 @@ sub wantedrw {
                 }
                 if ( $rwacl ne $roacl ) {
                     print "ACL changed: $rwtrim\n";
-                    print "  WAS: $roacl\n";
-                    print "  NOW: $rwacl\n";
+                    print "  ACL WAS: $roacl\n";
+                    print "  ACL NOW: $rwacl\n";
                 }
             } else {            # RW is regular dir, RO is neither link, dir, or mtpt
                 print "File replaced by directory: $rwtrim\n";
