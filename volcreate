@@ -233,14 +233,15 @@ sub volume_create {
 sub volume_clone {
     my ($server, $partition, $new, $old) = @_;
     require File::Temp;
-    my $dump = File::Temp->new;
+    my ($fh, $filename) = File::Temp::tempfile (undef, UNLINK => 1);
     print "Dumping volume $old\n";
-    system ($VOS, 'dump', '-id', $old, '-file', $dump->filename) == 0
+    system ($VOS, 'dump', '-id', $old, '-file', $filename) == 0
         or die "$0: failed to dump volume $old (status ", ($? >> 8), ")\n";
-    print "Restoring $new from ", $dump->filename, "\n";
+    print "Restoring $new from ", $filename, "\n";
     system ($VOS, 'restore', '-server', $server, '-partition', $partition,
-            '-name', $new, '-file', $dump->filename) == 0
+            '-name', $new, '-file', $filename) == 0
         or die "$0: failed to create volume $new (status ", ($? >> 8), ")\n";
+    close $fh;
 }
 
 # Mount the volume, chmod it to 755 since AFS creates it 777, and load the
