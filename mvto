@@ -73,7 +73,7 @@ print "$volume on $rwserver $rwpart ($size KB)\n";
 for (keys %ro) { print "  replica on $_ $ro{$_}\n" }
 
 # Now parse the first argument, which says what server to put the RW on.
-my @commands;
+my (@commands, $needrelease);
 my $toserver = shift;
 my $topart = shift;
 $toserver = 'afssvr' . $toserver if ($toserver =~ /^\d+$/);
@@ -85,6 +85,7 @@ if ($rwserver eq $toserver) {
         delete $ro{$rwserver};
     } elsif ($sites) {
         push (@commands, [ qw(vos addsite), $rwserver, $rwpart, $volume ]);
+        $needrelease++;
     }
 } else {
     push (@commands, [ qw(vos move -v), $volume, $rwserver, $rwpart,
@@ -94,6 +95,7 @@ if ($rwserver eq $toserver) {
         push (@commands, [ qw(vos remove), $toserver, $ro{$toserver},
                            "$volume.readonly" ]) if $ro{$toserver};
         push (@commands, [ qw(vos addsite), $toserver, $topart, $volume ]);
+        $needrelease++;
     }
 }
 
@@ -113,6 +115,7 @@ while (@ARGV) {
         delete $ro{$server};
     } else {
         push (@commands, [ qw(vos addsite), $server, $part, $volume ]);
+        $needrelease++;
     }
     $replicas++;
 }
@@ -121,7 +124,9 @@ if ($sites && $replicas < $sites) {
 }
 
 # Do the volume release, if necessary.
-if ($sites) { push (@commands, [ qw(vos release -v -f), $volume ]) }
+if ($sites && $needrelease) {
+    push (@commands, [ qw(vos release -v -f), $volume ]);
+}
 
 # Now clean up any remaining unwanted replicas.
 for (keys %ro) {
@@ -134,3 +139,110 @@ for (@commands) {
     print "@$_\n";
     unless ($justprint) { system (@$_) }
 }
+
+__END__
+
+############################################################################
+# Documentation
+############################################################################
+
+=head1 NAME
+
+mvto - Move an AFS volume from anywhere
+
+=head1 SYNOPSIS
+
+mvto I<volume> I<server> I<partition> [I<server> I<partition> ...]
+
+=head1 DESCRIPTION
+
+B<mvto> is a smart B<vos move> that uses B<vos examine> to determine where
+the volume is currently located and how it is currently replicated.  It
+essentially allows the user to say "make the volume distribution look like
+this" and it will make the changes necessary to do that.  For replicated
+volumes, the first server/partition pair is taken as the location of the
+read/write and every additional server/partition pair is taken as a site to
+put a replica.  (One replica is automatically put on the same partition as
+the read/write, if any replication sites are specified, so the result will
+be a replication site on every server/partition pair given.)
+
+If the volume is already located on the same server as the destination, even
+if it's on a different partition, this is considered by B<mvto> to be "good
+enough" and the volume will not be moved.  Similarly with replication sites,
+if there is already a replication site on that server (even on a different
+partition), that replication site won't be moved or removed and will be
+counted as one of the replication sites for the volume.  To move volumes
+between partitions on the same server requires more finesse and special
+cases since one cannot have two replicas on the same server, so it should be
+done by hand.
+
+If any details about the replication of the volume had to be changed (and
+the volume is replicated), the volume will be released.  In practice, this
+means that unless the volume is already located on all of the same servers
+given on the command line, already has a replication site on the same
+partition as the read/write, and already has the right number of replication
+sites, the volume will be released if replicated.  No check is made to
+ensure that the volume is safe to release; don't pass replicated volumes
+that aren't safe to release to B<mvto>.
+
+If the read/write volume has to be moved, B<mvto> will run B<vos backup> on
+the volume after the move (since volume moves have a side effect of deleting
+the backup volume).  Don't use this program on volumes that shouldn't have a
+backup volume.
+
+B<mvto> will happily increase the replication of a volume if it's already
+replicated and more replica sites are specified on the command line than it
+currently has (or if it doesn't already have a replica on the same partition
+as the read/write).  It won't, however, replicate an unreplicated volume or
+decrease the number of replication sites; those operations must be done by
+hand.
+
+AFS servers may be specified as just a number; all numeric server names will
+have C<afssvr> prepended to them.
+
+B<mvto> passes the verbose flag to most B<vos> commands it runs, and passes
+the B<-f> flag to B<vos release>.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-h>, B<--help>
+
+Print out this documentation (which is done simply by feeding the script to
+C<perldoc -t>).
+
+=item B<-v>, B<--version>
+
+Print out the version of B<mvto> and exit.
+
+=item B<-n>, B<--dry-run>, B<--just-print>
+
+Print out volume status information and the commands that B<mvto> would run,
+but don't execute any of them.
+
+=back
+
+=head1 EXAMPLES
+
+Move the volume ls.trip.windlord, wherever it is, to afssvr3 /vicepd:
+
+        mvto ls.trip.windlord afssvr3 /vicepd
+
+Move the volume ls to afssvr5 /vicepa, with replication sites on that same
+partition, on afssvr6 /vicepk, and on afssvr10 /vicepb:
+
+        mvto ls 5 a 6 k 10 b
+
+=head1 SEE ALSO
+
+vos(1), vos_addsite(1), vos_backup(1), vos_examine(1), vos_move(1),
+vos_release(1), vos_remove(1)
+
+=head1 AUTHOR
+
+Russ Allbery E<lt>rra@stanford.eduE<gt>, based on a much simpler script by
+Neil Crellin E<lt>neilc@stanford.eduE<gt> that only handled unreplicated
+volumes.
+
+=cut
