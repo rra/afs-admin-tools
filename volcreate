@@ -64,18 +64,17 @@ sub find_targets {
 
     # Special-case the fully-qualifed case where the user gave the exact
     # server and partition.
-    if (@locations == 2 && $locations[1] =~ /^[a-z]$/) {
-        my ($server, $partition) = @locations;
+    if (@locations == 1 && $locations[0][1] =~ /^[a-z]$/) {
+        my ($server, $partition) = @{ $locations[0] };
         $server = 'afssvr' . $server if ($server =~ /^\d+$/);
         $partition =~ s%^(?:/?vicep)?%/vicep%;
-        return ($server, $partition);
+        return [ $server, $partition ];
     }
 
     # The normal case, where we need to go looking at current server usage to
     # gather the necessary information.
     while (@locations) {
-        my $server = shift @locations;
-        my $part = shift @locations;
+        my ($server, $part) = @{ shift @locations };
 
         $server = 'afssvr' . $server if ($server =~ /^\d+$/);
         $part = 'a-z' if $part eq '.';
@@ -98,22 +97,21 @@ sub find_targets {
         push (@results, [ $server, $free[0][0], $free[0][2] ]);
     }
     @results = sort { $$b[2] <=> $$a[2] } @results;
-    return map { ($$_[0], $$_[1]) } @results;
+    return map { [ $$_[0], $$_[1] ] } @results;
 }
 
-# Given a volume type and an optional second argument specifying whether we're
-# creating a read/write or read-only version of a replicated volume, look
-# through the types file and find appropriate servers and partitions to use.
-# Returns a list of server and partition pairs suitable for being passed to
-# find_targets to find the best servers.
-sub find_servers {
-    my ($type, $class) = @_;
-    if ($class) { $type .= "-$class" }
+# Given a volume type for an unreplicated volume, look through the types file
+# and find appropriate servers and partitions to use.  Returns the server and
+# partition pair that has the most percentage free space.
+sub find_best_normal {
+    my $type = shift;
     my @locations;
     open (SERVERS, $SERVERS) or die "$0: can't open $SERVERS: $!\n";
     local $_;
     while (<SERVERS>) {
         my ($server, @rules) = split;
+        shift @rules if ($rules[0] =~ /^\[.*\]$/);
+        my $parts = '';
         for (@rules) {
             my ($part, $allowed);
             if (/:/) {
@@ -123,13 +121,82 @@ sub find_servers {
                 $allowed = $_;
             }
             if ($allowed eq $type) {
-                push (@locations, $server, $part);
+                $parts .= $part;
             }
+        }
+        if ($parts) {
+            push (@locations, [ $server, $parts ]);
         }
     }
     close SERVERS;
     if (!@locations) {
         die "$0: no servers found for type $type\n";
+    }
+    return @{ (find_targets @locations)[0] };
+}
+
+# Given a volume type for a replicated volume and the number of replicas, look
+# through the types file and find appropriate servers and partitions to use.
+# Returns a list, where the first two elements are the server and partition to
+# use for the read/write and the first replica and subsequent element pairs
+# are the server and partition to use for the read-only replicas.  Handles
+# geographic dispersion.
+sub find_best_replicated {
+    my ($type, $replicas) = @_;
+    my (@rw, @ro, %servers);
+    open (SERVERS, $SERVERS) or die "$0: can't open $SERVERS: $!\n";
+    local $_;
+    while (<SERVERS>) {
+        my ($server, @rules) = split;
+        my $site;
+        if ($rules[0] =~ /^\[(.*)\]$/) {
+            $site = $1;
+            shift @rules;
+        }
+        my $rwparts = '';
+        my $roparts = '';
+        for (@rules) {
+            my ($part, $allowed);
+            if (/:/) {
+                ($part, $allowed) = split ':';
+            } else {
+                $part = 'a-z';
+                $allowed = $_;
+            }
+            if ($allowed eq "$type-rw") {
+                $rwparts .= $part;
+            } elsif ($allowed eq "$type-ro") {
+                $roparts .= $part;
+            }
+        }
+        if ($rwparts) {
+            $servers{$server} = $site;
+            push (@rw, [ $server, $rwparts ]);
+        }
+        if ($roparts) {
+            $servers{$server} = $site;
+            push (@ro, [ $server, $roparts ]);
+        }
+    }
+    close SERVERS;
+    if (!@rw || !@ro || @ro < $replicas - 1) {
+        die "$0: insufficient servers found for type $type\n";
+    }
+    my @locations;
+    push (@locations, (find_targets @rw)[0]);
+    my %sites = map { $_ => 1 } values %servers;
+    for my $site (keys %sites) {
+        last if @locations >= $replicas;
+        next if $site eq $servers{$locations[0][0]};
+        my @candidates = grep { $servers{$$_[0]} eq $site } @ro;
+        next unless @candidates;
+        push (@locations, (find_targets @candidates)[0]);
+    }
+    my $found = @locations;
+    if ($found < $replicas) {
+        my %locations = map { @$_ } @locations;
+        @ro = grep { !$locations{$$_[0]} } @ro;
+        push (@locations, (find_targets @ro)[0 .. ($replicas - $found - 1)]);
     }
     return @locations;
 }
@@ -202,8 +269,7 @@ sub volume_setacls {
 sub volume_replicate {
     my ($volume, @locations) = @_;
     while (@locations) {
-        my $server = shift @locations;
-        my $partition = shift @locations;
+        my ($server, $partition) = @{ shift @locations };
         system ('/usr/pubsw/bin/vos', 'addsite', $server, $partition,
                 $volume) == 0
             or die "Failed to replicate volume to $server $partition",
@@ -266,13 +332,17 @@ $mtpt =~ s%/+$%%;
 
 # Canonify AFS server name and find the exact partition on which to create the
 # read/write volume.
-my @servers;
+my @ros;
 if ($type) {
-    @servers = find_servers ($type, $replicas > 0 ? 'rw' : '');
+    if ($replicas) {
+        @ros = find_best_replicated ($type, $replicas);
+        ($server, $partition) = @{ $ros[0] };
+    } else {
+        ($server, $partition) = find_best_normal ($type);
+    }
 } else {
-    @servers = ($server, $partition);
+    ($server, $partition) = @{ (find_targets [ $server, $partition ])[0] };
 }
-($server, $partition) = find_targets (@servers);
 
 # Do the work of creating and mounting the read/write volume.
 volume_create ($server, $partition, $volume, $quota);
@@ -282,17 +352,7 @@ volume_setacls ($volume, $mtpt, @acls);
 # If the volume is replicated, take care of creating and releasing the
 # replicas now that the ACL is set correctly.
 if ($replicas && $replicas > 0) {
-    my @locations = ($server, $partition);
-    if ($replicas > 1) {
-        my @servers = find_servers ($type, 'ro-first');
-        push (@locations, (find_targets @servers)[0 .. 1]);
-        if ($replicas > 2) {
-            @servers = find_servers ($type, 'ro');
-            my $range = ($replicas * 2) - 5;
-            push (@locations, (find_targets @servers)[0 .. $range]);
-        }
-    }
-    volume_replicate ($volume, @locations);
+    volume_replicate ($volume, @ros);
 }
 exit 0;
 __END__
