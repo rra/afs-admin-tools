@@ -209,7 +209,7 @@ while (@DirList)
 {
    my $adir = pop(@DirList);
    if ($VERBOSE)  {  print "\nDirectory: $adir\n";  }
-   (system("$FSBASE $FSCMD @FSHEAD $adir @FSTAIL") == 0)
+   (system($FSBASE, $FSCMD, @FSHEAD, $adir, @FSTAIL) == 0)
         or die "$0: $FSBASE $FSCMD @FSHEAD $adir @FSTAIL: $?\n";
 }
 
@@ -227,7 +227,7 @@ fsr - Recursively applies AFS "fs" commands to subdirectories.
 
 fsr [-h] [-v]
 
-fsr [-V] [-m] I<fs-subcommand syntax>
+fsr [-V] [-m] [-M] I<fs-subcommand syntax>
 
 =head1 SUPPORTED C<fs> SUBCOMMANDS
 
