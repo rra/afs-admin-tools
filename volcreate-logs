@@ -14,13 +14,20 @@ $ID = q$Id$;
 ##############################################################################
 
 # The address to which to send mailed reports.
-$ADDRESS = 'afs-reports@lists.stanford.edu';
+$ADDRESS        = 'afs-reports@lists.stanford.edu';
+
+# The full path to aklog, used to obtain AFS tokens from a Kerberos ticket.
+$AKLOG          = '/usr/local/bin/aklog';
 
 # The path to the config file specifying what to do.
-$CONFIG = '/afs/ir/service/afs/data/log-volumes';
+$CONFIG         = '/afs/ir/service/afs/data/log-volumes';
+
+# The default root path for ticket files, used for the -k option if a relative
+# path to a ticket file was given.
+$TICKETS        = '/var/run';
 
 # The path to volcreate, used to create volumes.
-$VOLCREATE = '/afs/ir/service/afs/scripts/volcreate';
+$VOLCREATE      = '/afs/ir/service/afs/scripts/volcreate';
 
 # The full path to fs and vos.  Allow for Linux where the preferred location
 # may be on local disk.
@@ -36,8 +43,8 @@ $VOS ||= '/usr/pubsw/bin/vos';
 require 5.005;
 
 use strict;
-use vars qw($ADDRESS $CONFIG $FS $ID $JUSTPRINT $MAIL $MAILOPEN $VOLCREATE
-            $VOS);
+use vars qw($ADDRESS $AKLOG $CONFIG $FS $ID $JUSTPRINT $MAIL $MAILOPEN
+            $TICKETS $VOLCREATE $VOS);
 use subs qw(system);
 
 use Getopt::Long qw(GetOptions);
@@ -316,12 +323,13 @@ sub parse_config {
 ##############################################################################
 
 # Parse command line options.
-my ($help, $version);
+my ($help, $ticket, $version);
 Getopt::Long::config ('bundling', 'no_ignore_case');
-GetOptions ('dry-run|just-print|n' => \$JUSTPRINT,
-            'help|h'               => \$help,
-            'mail|m'               => \$MAIL,
-            'version|v'            => \$version) or exit 1;
+GetOptions ('n|dry-run|just-print' => \$JUSTPRINT,
+            'h|help'               => \$help,
+            'k|ticket-cache=s'     => \$ticket,
+            'm|mail'               => \$MAIL,
+            'v|version'            => \$version) or exit 1;
 if ($help) {
     print "Feeding myself to perldoc, please wait....\n";
     exec ('perldoc', '-t', $0) or die "Cannot fork: $!\n";
@@ -331,6 +339,16 @@ if ($help) {
     $version =~ s/(\S+)$/($1)/;
     print $version, "\n";
     exit 0;
+}
+
+# If a ticket cache was specified on the command line, obtain Kerberos tickets
+# from that cache and run aklog to get a token.
+if ($ticket) {
+    require AFS::Utils;
+    $ticket = $TICKETS . '/' . $ticket unless $ticket =~ m%^/%;
+    $ENV{KRBTKFILE} = $ticket;
+    AFS::Utils::setpag () or die "$0: unable to setpag: $!\n";
+    system ($AKLOG) == 0 or die "$0: unable to obtain tokens\n";
 }
 
 # Parse the configuration and get the current time.
@@ -394,7 +412,7 @@ volcreate-logs - Create and grant quota to log volumes in AFS
 
 =head1 SYNOPSIS
 
-B<volcreate-logs> [B<-hmnv>]
+B<volcreate-logs> [B<-hmnv>] [B<-k> I<ticket-cache>]
 
 =head1 DESCRIPTION
 
@@ -442,6 +460,15 @@ increased by 10%, rounded up to the nearest 10MB.
 Print out this documentation (which is done simply by feeding the script to
 C<perldoc -t>).
 
+=item B<-k> I<path>, B<--ticket-cache>=I<path>
+
+Indicates that the Kerberos v4 ticket cache found at I<path> should be used
+to obtain an AFS token.  If this option is used, the AFS::Utils Perl module
+must be available.  A new PAG will be created for the script, the K4 ticket
+cache set to I<path>, and B<aklog> will be run to get a token.
+
+If I<path> is relative, it is assumed to be relative to F</var/run>.
+
 =item B<-m>, B<--mail>
 
 Report via e-mail rather than to standard out.  Sends an e-mail report to
@@ -467,6 +494,10 @@ Process all of the current rules, reporting actions to standard out.
 Do the same, but instead send the report via e-mail.
 
     volcreate-logs -m
+
+Do the same, but obtain AFS credentials from /var/run/admin.k4.tgt:
+
+    volcreate-logs -m -k admin.k4.tgt
 
 Check to see what needs to be done, but don't actually do it.  Instead, just
 print the commands that would be executed to standard out:
@@ -505,6 +536,11 @@ year of logs, and <quota> is the starting quota for each volume in MB.
 
 Used to create volumes.  B<volcreate-logs> assumes that B<volcreate> has
 been configured to set the appropriate initial ACLs for the volumes.
+
+=item F</usr/local/bin/aklog>
+
+If AFS token authentication is requested with the B<-k> flag, this program
+will be run to obtain an AFS token from the specified ticket cache.
 
 =back
 
