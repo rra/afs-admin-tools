@@ -1,9 +1,89 @@
-#!/usr/local/bin/perl
+#!/usr/local/bin/perl -w
+
+use File::Find;
+
 $rw=$ARGV[0];
 $ro=$rw;
-$ro =~ s:/afs/.ir.stanford.edu/:/afs/ir/: ;
+$ro =~ s:/afs/\.ir\.stanford\.edu/:/afs/ir/: ;
 
-print `find $rw -exec frak.rw {} \\;`;
+$| = 1;
+
+sub wantedrw {
+    $rw=$File::Find::name;
+    $ro=$rw;
+    $ro =~ s:/afs/\.ir\.stanford\.edu/:/afs/ir/: ;
+    ($rwtrim = $rw) =~ s/\.stanford\.edu//;
+    ($rwdev,$rwino,$rwmode,$rwlink,$rwuid,$rwgid,$rwrdev,
+     $rwsize,$rwatime,$rwmtime,$rwctime,$rwblksize,$rwblocks) = lstat($rw);
+    $rwislink = (-l _);
+    $rwexists = (-e _);
+    $rwisdir  = (-d _);
+    ($rodev,$roino,$romode,$rolink,$rouid,$rogid,$rordev,
+     $rosize,$roatime,$romtime,$roctime,$roblksize,$roblocks) = lstat($ro);
+    $roislink = (-l _);
+    $roexists = (-e _);
+    if ( $rwislink && ! $roexists ) {
+        print "New link: $rwtrim\n";  
+    } elsif ( $rwislink && ! $roislink ) {
+        print "Non-link replaced by link: $rwtrim\n";
+        system("ls -l $rw");
+    } elsif ( $roislink && ! $rwislink ) {
+        print "Link replaced by non-link: $rwtrim\n";
+        system("ls -l $ro $rw");
+    } elsif ( $rwexists && ! $roexists ) {
+        print "New: $rwtrim\n";
+    } elsif ( $rwisdir ) { # directory, check acl changes
+        if ( ($oldacl=`/usr/pubsw/bin/fs listacl $ro|/usr/pubsw/bin/sed '1d'`) ne ($newacl=`/usr/pubsw/bin/fs listacl $rw|/usr/pubsw/bin/sed '1d'`) ) {
+            print "ACL changed: $rwtrim\n";
+            print "ACL WAS: $oldacl";
+            print "ACL NOW: $newacl";
+        }
+    } else { # not a directory, check changes
+        if ( $rwislink && $roislink && ( $rwmtime != $romtime ) ) {
+#            local $_;
+
+            print "Link change: $rwtrim\n";
+            $rwlink = readlink($rw);
+            $rolink = readlink($ro);
+            print "  Link WAS: $rolink\n  Link NOW: $rwlink\n";
+#            open(LSLOUT,"ls -l $ro $rw|");
+#            while (<LSLOUT>) {
+#                s/(\Q$ro\E|\Q$rw\E) -> //;
+#                print;
+#            }
+#            close(LSLOUT);
+        }
+        elsif ( $rwmtime != $romtime ) {
+            print "Changed: $rwtrim\n";
+            if (-T $rw && -T $ro) {
+#      system("diff -c $rw $ro");
+            }
+        }
+    }
+}
+
+sub wantedro {
+    $ro=$File::Find::name;
+    $rw=$ro;
+    $rw =~ s:/afs/ir/:/afs/\.ir/: ;
+    ($rotrim = $ro) =~ s/\.stanford\.edu//;
+    ($rwdev,$rwino,$rwmode,$rwlink,$rwuid,$rwgid,$rwrdev,
+     $rwsize,$rwatime,$rwmtime,$rwctime,$rwblksize,$rwblocks) = lstat($rw);
+    $rwexists = (-e _);
+    ($rodev,$roino,$romode,$rolink,$rouid,$rogid,$rordev,
+     $rosize,$roatime,$romtime,$roctime,$roblksize,$roblocks) = lstat($ro);
+    $roislink = (-l _);
+    $roexists = (-e _);
+    if  ( $roislink && ! $rwexists ) {
+        print "Deleted link: $rotrim\n" ;
+    } elsif ( $roexists && ! $rwexists ) {
+        print "Deleted: $rotrim\n" ;
+    }
+}
+
+$File::Find::dont_use_nlink = 1;
+
+find(\&wantedrw, $rw);
 print "\n";
-print `find $ro -exec frak.ro {} \\;`;
+find(\&wantedro, $ro);
 print "\n";
