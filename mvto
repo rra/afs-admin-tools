@@ -1,22 +1,131 @@
 #!/usr/bin/perl -w
+$ID = q$Id$;
+#
+# mvto -- Move an AFS volume from anywhere.
+#
+# Written by Russ Allbery <rra@stanford.edu>
+# Based on code by Neil Crellin <neilc@stanford.edu>
+# Copyright 1998, 1999 Board of Trustees, Leland Stanford Jr. University
+#
+# A smart vos move, or a vos move that assumes you know what you're doing,
+# depending on your point of view.  mvto parses the output of vos examine
+# for a volume to figure out where it is and then puts it where you want it.
+# It also supports replicated volumes, and is able to figure out how the
+# replication pattern of a volume differs from what you want it to be and
+# correct it.
 
-if (@ARGV != 3) { die "Usage: mvto volume server partition\n" }
+use vars qw($ID);
+use Getopt::Long qw(GetOptions);
 
-$volname = $ARGV[0];
-$toserver = $ARGV[1];
-$topart = $ARGV[2];
+# Override system with something that checks return status.
+use subs qw(system);
+sub system {
+    CORE::system (@_) == 0
+        or die "$0: @_ failed (status " . ($? >> 8) . ")\n";
+}
 
-unless ($toserver =~ /^afssvr/) { $toserver = "afssvr$toserver" }
-open(VOSEXAM, "/usr/pubsw/bin/vos examine $volname|");
-while (<VOSEXAM>) {
-    if ( m/^\S*\s*[0-9]*\s*(RW|RO|BK)\s*([0-9]*)\s*K\s*\S*/) {
-      $volsize = $2;
-    }
-    if ( m/\s*(\w*)\.stanford\.edu\s*(\/vicep[a-z])/i ) {
-      $srcserver = $1;
-      $srcpart = $2;
-      print "$volname seen on $srcserver $srcpart, $volsize K\n";
-      system "vos move -v $volname $srcserver $srcpart $toserver $topart;vos backup $volname";
+# Usage message, in case the command line syntax is wrong.
+sub usage { die "Usage: $0 <vol> <server> <part> [<server> <part> ...]\n" }
+
+# Parse our options.
+my $fullpath = $0;
+$0 =~ s%.*/%%;
+my ($help, $justprint, $version);
+Getopt::Long::config ('bundling', 'no_ignore_case');
+GetOptions ('help|h'               => \$help,
+            'dry-run|just-print|n' => \$justprint,
+            'version|v'            => \$version) or exit 1;
+if ($help) {
+    print "Feeding myself to perldoc, please wait....\n";
+    exec ('perldoc', '-t', $fullpath);
+} elsif ($version) {
+    my $version = join (' ', (split (' ', $ID))[1,2]);
+    $version =~ s/,v\b//;
+    die $version, "\n";
+}
+
+# Volume name is always the first argument.  Pull it off and figure out
+# where this volume is.
+usage if (@ARGV < 3);
+my $volume = shift;
+usage if (@ARGV % 2 != 0);
+open (VEX, "/usr/pubsw/bin/vos examine $volume |")
+    or die "$0: can't fork vos examine: $!\n";
+my ($size, $rwserver, $rwpart, %ro, $sites);
+while (<VEX>) {
+    if (/^\Q$volume\E\s+\d+ (RW|RO|BK)\s+(\d+) K\s+On-line\s*$/) {
+        die "$0: $volume is $1, not RW\n" unless $1 eq 'RW';
+        $size = $2;
+    } elsif (/^\s+server ([^.\s]+)\.\S+ partition (\S+) RW Site\s*/) {
+        die "$0: saw two RW sites for $volume\n" if $rwserver;
+        $rwserver = $1;
+        $rwpart = $2;
+    } elsif (/^\s+server ([^.\s]+)\.\S+ partition (\S+) RO Site\s*/) {
+        $ro{$1} = $2;
+        $sites++;
     }
 }
-close(VOSEXAM);
+close VEX;
+die "$0: unable to parse vos examine $volume\n" unless ($rwserver && $size);
+die "$0: replicated syntax given and $volume is unreplicated\n"
+    if (!$sites && @ARGV > 2);
+print "$volume on $rwserver $rwpart ($size KB)\n";
+for (keys %ro) { print "  replica on $_ $ro{$_}\n" }
+
+# Now parse the first argument, which says what server to put the RW on.
+my @commands;
+my $toserver = shift;
+my $topart = shift;
+$toserver = 'afssvr' . $toserver if ($toserver =~ /^\d+$/);
+$topart = '/vicep' . $topart unless ($topart =~ m%^/vicep%);
+die "$0: invalid partition $topart\n" if ($topart !~ m%^/vicep[a-z]$%);
+if ($rwserver eq $toserver) {
+    print "$volume is already on $rwserver $rwpart\n";
+} else {
+    push (@commands, [ qw(vos move -v), $volume, $rwserver, $rwpart,
+                       $toserver, $topart ]);
+    push (@commands, [ qw(vos backup), $volume ]);
+    if ($sites && (!$ro{$toserver} || $ro{$toserver} ne $topart)) {
+        push (@commands, [ qw(vos remove), $toserver, $ro{$toserver},
+                           "$volume.readonly" ]) if $ro{$toserver};
+        push (@commands, [ qw(vos addsite), $toserver, $topart, $volume ]);
+    }
+}
+
+# Grab the remaining arguments, which give the desired replication.  Build a
+# hash table of the servers the volume is already replicated on, and check
+# the desired state against the current state.  Consider having a replica on
+# the right destination server to be good enough and don't move replicas on
+# the server.
+my $replicas = 1;
+while (@ARGV) {
+    my ($server, $part) = splice (@ARGV, 0, 2);
+    $server = 'afssvr' . $server if ($server =~ /^\d+$/);
+    $part = '/vicep' . $part unless ($part =~ m%^/vicep%);
+    die "$0: invalid partition $part\n" if ($part !~ m%^/vicep[a-z]$%);
+    if ($ro{$server}) {
+        print "$volume is already on $server $ro{$server}\n";
+        delete $ro{$server};
+    } else {
+        push (@commands, [ qw(vos addsite), $server, $part, $volume ]);
+    }
+    $replicas++;
+}
+if ($replicas < $sites) {
+    die "$0: would reduce replication from $sites sites to $replicas\n";
+}
+
+# Do the volume release, if necessary.
+if ($sites) { push (@commands, [ qw(vos release -v -f), $volume ]) }
+
+# Now clean up any remaining unwanted replicas.
+for (keys %ro) {
+    push (@commands, [ qw(vos remove), $_, $ro{$_}, "$volume.readonly" ]);
+}
+
+# Okay, run our commands.
+print "\n";
+for (@commands) {
+    print "@$_\n";
+    unless ($justprint) { system (@$_) }
+}
