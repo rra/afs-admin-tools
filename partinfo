@@ -14,10 +14,24 @@ $ID = q$Id$;
 
 # Make sure our arguments make sense.
 $0 =~ s%.*/%%;
+my $color;
+if ($ARGV[0] eq '-c') {
+    shift;
+    $color = 1;
+    require Term::ANSIColor;
+}
 die "Usage: $0 <afssvr>\n" if (@ARGV != 1);
 die "$ARGV[0] is not an AFS server\n" unless ($ARGV[0] =~ /^afssvr[1-9]/);
 
-# Run vos partinfo and parse the output.
+# We can't use formats if we're using color because format mangles color
+# output.  *sigh*
+if ($color) {
+    printf ("%18s: %10s %10s %10s %8s %10s\n", 'Partition', 'Total', 'Used',
+            'Free', '%Full', 'Available');
+}
+
+# Run vos partinfo and parse the output.  If we're doing color, we have to
+# use printf instead of formats.
 my ($partition, $used, $total, $free, $usable, $pfree);
 undef $-;
 open (PARTINFO, "vos partinfo $ARGV[0] |") or die "$0: can't fork: $!\n";
@@ -28,7 +42,16 @@ while (<PARTINFO>) {
         $used = $total - $free;
         $usable = int ($free - 0.2 * $total);
         $pfree = 100 * $used / $total;
-        write;
+        if ($color) {
+            my $c;
+            if    ($pfree < 60) { $c = Term::ANSIColor::color ('green')  }
+            elsif ($pfree > 80) { $c = Term::ANSIColor::color ('red')    }
+            printf ("%18s: %10d %10d %10d %s%7.2f%%%s %10d\n", $partition,
+                    $total, $used, $free, $c, $pfree,
+                    Term::ANSIColor::color ('reset'), $usable);
+        } else {
+            write;
+        }
     } else {
         print;
     }
