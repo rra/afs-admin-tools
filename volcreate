@@ -5,16 +5,59 @@ $ID = q$Id$;
 #
 # Written by Neil Crellin <neilc@stanford.edu>
 #        and Russ Allbery <rra@stanford.edu>
-# Copyright 1998 Board of Trustees, Leland Stanford Jr. University
+# Copyright 1998, 1999, 2000, 2002
+#     Board of Trustees, Leland Stanford Jr. University
 #
 # Creates a new AFS volume on the given server and partition and mounts it
 # in the file system, setting default ACLs if appropriate.  It then calls
 # loadmtpt to update the mount point database.
 
+##############################################################################
+# Modules and declarations
+##############################################################################
+
 require 5.001;
 
 use strict;
 use vars qw($ID);
+
+##############################################################################
+# AFS information
+##############################################################################
+
+# Given a server name and a partition, fully qualify both and return them as a
+# list of ($server, $partition).  Accepts - as the partition to pick the least
+# loaded partition on that server, or a list of letters or letter ranges to
+# pick the least loaded of the partitions on the server from that range.
+sub findpartition {
+    my ($server, $part) = @_;
+    $server = 'afssvr' . $server if ($server =~ /^\d+$/);
+    if ($part eq '.' || (length ($part) > 1 && $part =~ /^[a-z-]+$/)) {
+        $part = 'a-z' if $part eq '.';
+        open (INFO, "vos partinfo $server |") or die "$0: can't fork: $!\n";
+        my @free;
+        local $_;
+        while (<INFO>) {
+            if (m%^Free space on partition (/vicep[$part]): (\d+) K %) {
+                push (@free, [ $1, $2 ]);
+            } elsif (m%^Free space on partition (/vicep.)%) {
+                next;
+            } else {
+                die "$0: vos partinfo said $_\n";
+            }
+        }
+        @free = sort { $$b[1] <=> $$a[1] } @free;
+        $part = $free[0][0];
+    } else {
+        $part =~ s%^(?:/?vicep)?%/vicep%;
+    }
+    die "$0: invalid partition $part\n" if ($part !~ m%^/vicep[a-z]$%);
+    return ($server, $part);
+}
+
+##############################################################################
+# Main routine
+##############################################################################
 
 # Trim extraneous garbage from the path.
 my $fullpath = $0;
@@ -42,33 +85,33 @@ die "Mount point must begin with /afs/.ir/\n" unless $mtpt =~ m%^/afs/.ir/%;
 # the mount point database.
 $mtpt =~ s%/+$%%;
 
-# Canonify AFS server name.
-if ($server =~ /^\d+$/) { $server = "afssvr$server" }
-die "$server is not an afs server.\n" unless $server =~ /^afssvr\d+$|^gsbafs\d$/;
+# Canonify AFS server name and find the exact partition.
+($server, $partition) = findpartition ($server, $partition);
+die "$server is not an afs server.\n" unless $server =~ /^afssvr\d+$/;
 
 # Append system:backup rl on ACL list to allow ADSM backups.
 push (@acls, 'system:backup', 'rl');
 
 # Append acl's for groups and departments if necessary
-if(($volume =~ /^group/) || ($volume =~ /^dept/)) {
-  push (@acls, 'system:anyuser', 'rl');
-  push (@acls, 'system:dept-admin', 'all');
+if ($volume =~ /^(?:group|dept)\./) {
+    push (@acls, 'system:anyuser', 'rl');
+    push (@acls, 'system:dept-admin', 'all');
 }
 
 # Create the volume and mount it.  Set ACLs if we were given any, and then
 # chmod the root of the volume to 755 since AFS creates it 777.  Use
-# /usr/afsws/bin/fs to avoid the wrapper, which doesn't like us fiddling
-# with the system:backup ACL.
+# /usr/afsws/bin/fs to avoid the wrapper, which doesn't like us fiddling with
+# the system:backup ACL.
 system ('/usr/pubsw/bin/vos', 'create', $server, $partition, $volume,
-        $quota * 1000) == 0 
+        $quota * 1000) == 0
     or die 'Failed to create volume (status ', ($? >> 8), ")\n";
 system ('/usr/afsws/bin/fs', 'mkm', $mtpt, $volume) == 0
     or die 'Failed to make mount point (status ', ($? >> 8), ")\n";
 system ('/usr/afsws/bin/fs', 'setacl', $mtpt, @acls) == 0
     or warn 'Failed to set acls (status ', ($? >> 8), ")\n";
 chmod (0755, $mtpt) or warn "Failed to chmod root: $!\n";
-system ('/afs/ir/service/afs/scripts/loadmtpt', $mtpt) == 0 
-    or warn 'Failed to load mountpoint (status ', ($? >> 8), ")\n"; 
+system ('/afs/ir/service/afs/scripts/loadmtpt', $mtpt) == 0
+    or warn 'Failed to load mountpoint (status ', ($? >> 8), ")\n";
 
 __END__
 
@@ -92,14 +135,24 @@ sets its quota, and mounts it in the file system at the given path,
 optionally setting its ACL.  It then updates the AFS mount point database to
 include this new volume.
 
-I<server> should be either a full server name (like "afssvr3") or just a
-number (like "3", which is equivalent).  I<part> is the partition on that
-server to use, in any form accepted by the standard AFS utilities ("a",
-"vicepa", and "/vicepa" are all allowed).  I<volume> is the name of the
-volume to create.  I<quota> is its quota in megabytes (B<not> in kilobytes).
-I<mount> is the full path to the intended mount location of the volume (this
-must begin with "/afs/.ir/" so that the mount point database remains
-consistent).  I<acl> is any normal ACL arguments to C<fs setacl>.
+I<server> is the AFS server on which to create the volume.  AFS servers may
+be specified as just a number; all numeric server names will have C<afssvr>
+prepended to them.
+
+I<part> is the partition on which to create that volume.  Partitions may be
+specified as a simple letter, as C<vicepX>, or as C</vicepX>.  More than 26
+partitions on one server is not supported.  Partitions may also be specified
+as C<.>, in which case the parition on that server with the most free space
+according to B<vos partinfo> is chosen, or as a string of letters and letter
+ranges such as C<ace-gm>, in which case the partition of the set specified
+with the most free space is chosen.  (In this example, the set is /vicepa,
+/vicepc, /vicepe through /vicepg, or /vicepm on the given sever.)
+
+I<volume> is the name of the volume to create.  I<quota> is its quota in
+megabytes (B<not> in kilobytes).  I<mount> is the full path to the intended
+mount location of the volume (this must begin with "/afs/.ir/" so that the
+mount point database remains consistent).  I<acl> is any normal ACL
+arguments to C<fs setacl>.
 
 =head1 OPTIONS
 
@@ -140,7 +193,6 @@ L<vos_create(1)>, L<fs_mkmount(1)>, L<fs_setquota(1)>, L<fs_setacl(1)>
 
 =head1 AUTHORS
 
-Neil Crellin E<lt>neilc@stanford.eduE<gt> and Russ Allbery
-E<lt>rra@stanford.eduE<gt>.
+Neil Crellin <neilc@stanford.edu> and Russ Allbery <rra@stanford.edu>.
 
 =cut
