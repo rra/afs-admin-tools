@@ -80,6 +80,9 @@ $fs = '/usr/pubsw/bin/fs';
 use vars qw($opt_suppressdiffs $opt_maxdifflines $opt_leave2ndRW
             $opt_changedir $opt_crossmountpoints %options);
 
+# need this to prevent prototype errors
+sub bundle_quote (@); 
+
 %options = (MaxDiffLines => 200);
 
 &GetOptions("suppressdiffs!","maxdifflines=i","leave2ndRW!",
