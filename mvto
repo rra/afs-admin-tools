@@ -387,7 +387,10 @@ sub move_single {
             push (@commands, addsite (@dest, $volume));
             $needrelease++;
         }
-    } elsif ($volinfo{sites} > 0 && $source[1] eq $volinfo{ro}{$source[0]}) {
+    } elsif ($volinfo{sites} > 0 && $volinfo{ro}{$source[0]}) {
+        if ($source[1] ne $volinfo{ro}{$source[0]}) {
+            die "$0: $volume not on @source\n";
+        }
         if ($volinfo{ro}{$dest[0]}) {
             die "$0: $volume already has a replica on on $dest[0]\n";
         }
