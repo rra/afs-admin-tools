@@ -71,6 +71,7 @@ use vars qw($argc $maxdifflines $rw $ro $startrw $startro
             $newloc $oldloc $newacl $oldacl
 	    $fs
             $version
+            $testmtpt
            );
 
 $fs = '/usr/pubsw/bin/fs';
@@ -95,6 +96,20 @@ if ( $argc == 1 && length($rw) >= 7 && substr($rw,0,7) eq '/afs/ir' ) {
     warn "Warning: RW path argument specified RO syntax, autocorrecting\n";
     substr($rw,0,7) = "/afs/.ir";
 }
+
+if ( substr($rw,-1,1) eq '/') {
+    warn "Warning: Deleting unwanted trailing slash\n";
+    chop $rw;
+}
+
+$testmtpt = `$fs lsmount $rw  2>&1`;
+if ( $? != 0 ) {
+    warn "\n" . "*"x74 ."\n"
+        ." "x33 . "WARNING!\n"
+        ."$rw is NOT a mountpoint for its volume\n"
+        ."*"x74 ."\n\n";
+}
+ 
 
 $ro = ( $argc == 2 ? $ARGV[1] : $rw ) ;
 $rw =~ s:^/afs/\.ir(\.stanford\.edu)?/:/afs/.ir.stanford.edu/: ;
