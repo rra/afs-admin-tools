@@ -5,7 +5,7 @@ $ID = q$Id$;
 #
 # Written by Neil Crellin <neilc@stanford.edu>
 # Modifications by Russ Allbery <rra@stanford.edu>
-# Copyright 1998, 1999 Board of Trustees, Leland Stanford Jr. University
+# Copyright 1998, 1999, 2003 Board of Trustees, Leland Stanford Jr. University
 #
 # Takes a directory and finds all AFS mountpoints in that directory.  Note
 # that this will stat each file in the directory, so you probably don't want
@@ -24,10 +24,11 @@ package main;
 # Parse our options.
 my $fullpath = $0;
 $0 =~ s%.*/%%;
-my ($help, $list, $recurse, $version);
+my ($help, $list, $quiet, $recurse, $version);
 Getopt::Long::config ('bundling', 'no_ignore_case');
 GetOptions ('help|h'    => \$help,
             'list|l'    => \$list,
+            'quiet|q'   => \$quiet,
             'recurse|r' => \$recurse,
             'version|v' => \$version) or exit 1;
 if ($help) {
@@ -55,7 +56,7 @@ sub check {
         return;
     }
     $count++;
-    print "$count directories examined\n" if ($count % 1000 == 0);
+    print "$count directories examined\n" if (!$quiet && $count % 1000 == 0);
     my $mtpt = `/usr/pubsw/bin/fs lsmount '$file' 2>&1`;
     if ($? == 0) {
         $mtpt =~ s/.*a mount point for volume \'\#(\S+)\'\s+$/$1/;
@@ -92,9 +93,9 @@ if ($recurse) {
 
 __END__
 
-############################################################################
+##############################################################################
 # Documentation
-############################################################################
+##############################################################################
 
 =head1 NAME
 
@@ -102,7 +103,7 @@ lsmounts - List mountpoints found in a directory
 
 =head1 SYNOPSIS
 
-lsmounts [B<-hlrv>] [I<directory> ...]
+lsmounts [B<-hlqrv>] [I<directory> ...]
 
 =head1 DESCRIPTION
 
@@ -120,8 +121,8 @@ If B<lsmounts> should recurse into all given directories, pass it the B<-r>
 option.  Be very careful with this, as with all recursive finds in AFS, as
 you could potentially traverse a very large directory structure.
 B<lsmounts> I<will> cross mount points.  Every 1000 directories it inspects,
-it will print out a status message, and it will keep track of volumes it has
-already seen and will not recurse into them again.
+it will print out a status message unless B<-q> is given, and it will keep
+track of volumes it has already seen and will not recurse into them again.
 
 =head1 OPTIONS
 
@@ -132,20 +133,25 @@ already seen and will not recurse into them again.
 Print out this documentation (which is done simply by feeding the script to
 C<perldoc -t>).
 
-=item B<-v>, B<--version>
-
-Print out the version of B<partinfo> and exit.
-
 =item B<-l>, B<--list>
 
 Print out a simple list of volumes for which mount points were found, rather
 than a human-readable report of both volumes and mount points.
+
+=item B<-q>, B<--quiet>
+
+Don't print out a status message every 1000 directories.  Only print out the
+list of mount points found.
 
 =item B<-r>, B<--recurse>
 
 Recurse into the given directories rather than just checking their top-level
 contents.  This option I<will> cross mount points; be careful.  See above
 for full details.
+
+=item B<-v>, B<--version>
+
+Print out the version of B<partinfo> and exit.
 
 =back
 
@@ -154,14 +160,14 @@ for full details.
 The following command displays a report of all volume mount points in the
 directory /afs/ir:
 
-        lsmounts /afs/ir
+    lsmounts /afs/ir
 
 The following command displays a simple list of all volumes found mounted
 under ~rra, decending through its directory structure recursively.  If there
 are other volumes mounted under that directory, they will be searched
 through as well:
 
-        lsmounts -lr ~rra
+    lsmounts -lr ~rra
 
 =head1 SEE ALSO
 
@@ -169,10 +175,10 @@ fs(1), fs_lsmount(1)
 
 =head1 AUTHORS
 
-Original Perl script written by Neil Crellin E<lt>neilc@stanford.eduE<gt>,
-as was the original recursive modification of that script.  Extensively
-modified by Russ Allbery E<lt>rra@stanford.eduE<gt> to merge the two
-scripts, add the human-readable output, and allow multiple command-line
-arguments for the non-recursive case.
+Original Perl script written by Neil Crellin <neilc@stanford.edu>, as was
+the original recursive modification of that script.  Extensively modified by
+Russ Allbery <rra@stanford.edu> to merge the two scripts, add the
+human-readable output, and allow multiple command-line arguments for the
+non-recursive case.
 
 =cut
