@@ -1,795 +1,796 @@
 #!/usr/bin/perl -w
-$version = q$Id$;
+$ID = q$Id$;
 #
-# frak - Show changes between two software trees
+# frak -- Show changes between two AFS trees.
+#
+# Written by Neil Crellin <neilc@stanford.edu>
+# Updated by Russ Allbery <rra@stanford.edu>
+# Copyright 1998, 1999, 2004 Board of Trustees, Leland Stanford Jr. University
+#
+# This program is free software; you may redistribute it and/or modify it
+# under the same terms as Perl itself.
+#
+# Perhaps the single most useful AFS utility if you use replicated volumes
+# regularly.  Compares two AFS trees to each other, generally the read/write
+# and read-only versions of the same volume, and presents a readable summary
+# of the differences so that you can see exactly what will be changed when the
+# volume is released.
 
-require 5.003;                  # I prototype a sub below.
+##############################################################################
+# Site configuration
+##############################################################################
 
-use File::Find qw(find);
-use Date::Format qw(ctime);
-use Getopt::Long qw(GetOptions);
-use Carp qw(confess);
+# The full path to a suitable diff that supports -u.
+$DIFF = '/usr/pubsw/bin/diff';
+
+# The default limit on the size of a diff in lines that will be included.
+$MAXDIFF = 200;
+
+# The full path to fs and vos.  Allow for Linux where the preferred location
+# may be on local disk.
+($FS)  = grep { -x $_ } qw(/usr/bin/fs /usr/afsws/bin/fs /usr/pubsw/bin/fs);
+$FS ||= '/usr/afsws/bin/fs';
+($VOS) = grep { -x $_ } qw(/usr/bin/vos /usr/pubsw/bin/vos);
+$VOS ||= '/usr/pubsw/bin/vos';
+
+##############################################################################
+# Modules and declarations
+##############################################################################
+
+require 5.005;
 
 use strict;
+use vars qw($CHANGEDIR $CROSSMOUNT $DEBUG $DIFF $FS $ID $LOGFILE $MAXDIFF
+            $MUNGE $NODIFF $QUIET $ROOTRO $ROOTRW $VOS);
 
-# Mode masks from /usr/include/sys/stat.h
+use Cwd qw(cwd);
+use File::Find qw(find);
+use File::stat qw(lstat);
+use Getopt::Long qw(GetOptions);
+use POSIX qw(strftime);
+use Stat::lsMode qw(format_mode);
 
-use vars qw($S_IFMT $S_IAMB $S_IFIFO $S_IFCHR $S_IFDIR $S_IFNAM
-            $S_INSEM $S_INSHD $S_IFBLK $S_IFREG $S_IFLNK $S_IFSOCK
-            $S_IFDOOR $S_ISUID $S_ISGID $S_ISVTX $S_IREAD $S_IWRITE
-            $S_IEXEC $S_ENFMT $S_IRWXU $S_IRUSR $S_IWUSR $S_IXUSR
-            $S_IRWXG $S_IRGRP $S_IWGRP $S_IXGRP $S_IRWXO $S_IROTH
-            $S_IWOTH $S_IXOTH);
+##############################################################################
+# Utility functions
+##############################################################################
 
-$S_IFMT     =     0xF000  ;     #  type of file 
-$S_IAMB     =     0x1FF   ;     #  access mode bits 
-$S_IFIFO    =     0x1000  ;     #  fifo 
-$S_IFCHR    =     0x2000  ;     #  character special 
-$S_IFDIR    =     0x4000  ;     #  directory 
-$S_IFNAM    =     0x5000  ;     #  XENIX special named file 
-$S_INSEM    =     0x1     ;     #  XENIX semaphore subtype of IFNAM 
-$S_INSHD    =     0x2     ;     #  XENIX shared data subtype of IFNAM 
-$S_IFBLK    =     0x6000  ;     #  block special 
-$S_IFREG    =     0x8000  ;     #  regular 
-$S_IFLNK    =     0xA000  ;     #  symbolic link 
-$S_IFSOCK   =     0xC000  ;     #  socket 
-$S_IFDOOR   =     0xD000  ;     #  door 
-$S_ISUID    =     0x800   ;     #  set user id on execution 
-$S_ISGID    =     0x400   ;     #  set group id on execution 
-$S_ISVTX    =     0x200   ;     #  save swapped text even after use 
-$S_IREAD    =     00400   ;     #  read permission, owner 
-$S_IWRITE   =     00200   ;     #  write permission, owner 
-$S_IEXEC    =     00100   ;     #  execute/search permission, owner 
-$S_ENFMT    =     $S_ISGID;     #  record locking enforcement flag 
-
-#  the following macros are for POSIX conformance 
-
-$S_IRWXU = 00700;               #  read, write, execute: owner 
-$S_IRUSR = 00400;               #  read permission: owner 
-$S_IWUSR = 00200;               #  write permission: owner 
-$S_IXUSR = 00100;               #  execute permission: owner 
-$S_IRWXG = 00070;               #  read, write, execute: group 
-$S_IRGRP = 00040;               #  read permission: group 
-$S_IWGRP = 00020;               #  write permission: group 
-$S_IXGRP = 00010;               #  execute permission: group 
-$S_IRWXO = 00007;               #  read, write, execute: other 
-$S_IROTH = 00004;               #  read permission: other 
-$S_IWOTH = 00002;               #  write permission: other 
-$S_IXOTH = 00001;               #  execute permission: other 
-
-use vars qw($argc $maxdifflines $rw $ro $startrw $startro
-            $rwtrim $rotrim $startrwtrim $startrotrim $rwtidy $rotidy
-            $rwdev $rwino $rwmode $rwlink $rwuid 
-            $rwgid $rwrdev $rwsize $rwatime 
-            $rwmtime $rwctime $rwblksize $rwblocks
-            $rodev $roino $romode $rolink $rouid 
-            $rogid $rordev $rosize $roatime 
-            $romtime $roctime $roblksize $roblocks
-            $rwexists $rwislink $rwisdir $rwismtpt $rwmtpt $rwacl $rwlsout
-            $roexists $roislink $roisdir $roismtpt $romtpt $roacl $rolsout
-            $rwmodeoctal $romodeoctal
-            $newloc $oldloc $newacl $oldacl
-	    $fs
-            $version
-            $testmtpt
-           );
-
-($fs) = grep { -x $_ } qw(/usr/bin/fs /usr/afsws/bin/fs /usr/pubsw/bin/fs);
-
-use vars qw($opt_suppressdiffs $opt_maxdifflines $opt_leave2ndRW
-            $opt_changedir $opt_crossmountpoints %options);
-
-# need this to prevent prototype errors
-sub bundle_quote (@); 
-
-%options = (MaxDiffLines => 200);
-
-&GetOptions("suppressdiffs!","maxdifflines=i","leave2ndRW!",
-            "changedir=s","crossmountpoints");
-
-if ($opt_maxdifflines) { $options{'MaxDiffLines'} = $opt_maxdifflines; }
-$maxdifflines = $options{'MaxDiffLines'};
-
-$argc = @ARGV;
-die "Too many arguments: frak {options} rw [ro]\n" if ($argc > 2);
-
-$rw = $ARGV[0];
-if ( $argc == 1 && length($rw) >= 7 && substr($rw,0,7) eq '/afs/ir' ) {
-    warn "Warning: RW path argument specified RO syntax, autocorrecting\n";
-    substr($rw,0,7) = "/afs/.ir";
+# Quote an output string so that it will be safely and correctly parsed by
+# bundle.  Passes through anything that looks like a variable reference to
+# $ORIG or $DEST at the beginning of the string, however (be careful of this).
+sub bundle_quote ( @ ) {
+    my @strings = @_;
+    for (@strings) {
+        s/([\\\"\'\$\s])/\\$1/g;
+        s/(\\\n)/\'$1\'/g;
+        s/^\\\$(ORIG|DEST)/\$$1/;
+    }
+    return join (' ', @strings);
 }
 
-if ( substr($rw,-1,1) eq '/') {
-    warn "Warning: Deleting unwanted trailing slash\n";
-    chop $rw;
+# Given the stat information for a file, return all of the various bundle
+# variable settings to recreate that.
+sub bundle_mode ( $ ) {
+    my ($stat) = @_;
+    my @vars = ('owner=' . $stat->uid, 'group=' . $stat->gid);
+    push (@vars, sprintf ('mode=%lo', $stat->mode & 07777));
+    push (@vars, 'atime=' . $stat->atime, 'mtime=' . $stat->mtime);
+    return @vars;
 }
 
-$testmtpt = `$fs lsmount $rw  2>&1`;
-if ( $? != 0 ) {
-    warn "\n" . "*"x74 ."\n"
-        ." "x33 . "WARNING!\n"
-        ."$rw is NOT a mountpoint for its volume\n"
-        ."*"x74 ."\n\n";
-}
- 
-
-$ro = ( $argc == 2 ? $ARGV[1] : $rw ) ;
-$rw =~ s:^/afs/\.ir(\.stanford\.edu)?/:/afs/.ir.stanford.edu/: ;
-
-if ( $opt_leave2ndRW ) {
-    $ro =~ s:^/afs/(\.)?ir(\.stanford\.edu)?/:/afs/.ir.stanford.edu/: ;
-} else {
-    $ro =~ s:^/afs/(\.)?ir(\.stanford\.edu)?/:/afs/ir.stanford.edu/: ;
+# Return a file name with the variable substitutions done for bundle.
+sub bundle_name ( $$$ ) {
+    my ($name, $base, $var) = @_;
+    $name =~ s(^\Q$base\E) (\$$var);
+    return $name;
 }
 
-$startrw = $rw;
-$startro = $ro;
-($startrwtrim = $startrw) =~ s:^(/afs/(\.)?ir)\.stanford\.edu:$1:;
-($startrotrim = $startro) =~ s:^(/afs/(\.)?ir)\.stanford\.edu:$1:;
-
-if ( $opt_changedir ) {
-    open(CHANGES,">$opt_changedir/changes.b") 
-        or die "Can't open changes bundle file\n";
-    open(REVERT, ">$opt_changedir/revert.b")  
-        or die "Can't open revert  bundle file\n";
-    open(APPLY,  ">$opt_changedir/apply.b")   
-        or die "Can't open apply   bundle file\n";
-    mkdir "$opt_changedir/old", 0755 or die "Can't mkdir old directory\n";
-    mkdir "$opt_changedir/new", 0755 or die "Can't mkdir new directory\n";
-
-    print CHANGES "ORIG=", bundle_quote($startrotrim), 
-                  "\nDEST=", bundle_quote($startrwtrim), "\n\n";
-    print REVERT  "ORIG=", bundle_quote($startrotrim), 
-                  "\nDEST=", bundle_quote($startrwtrim), "\n\n";
-    print APPLY   "ORIG=", bundle_quote($startrotrim), 
-                  "\nDEST=", bundle_quote($startrwtrim), "\n\n";
+# Return the fs command, as a list, to set the ACL on the given file to the
+# given ACL string (in the compressed form that is returned by getacl).
+sub bundle_setacl ( $$ ) {
+    my ($name, $acl) = @_;
+    my @acl = split (/=,/, $acl);
+    unshift (@acl, $FS, 'setacl', $name);
+    my $negative;
+    @acl = map {
+        if (!/^--/ || $negative) {
+            $_;
+        } else {
+            ('-negative', $_);
+        }
+    } @acl;
+    push (@acl, '-clear');
+    return @acl;
 }
 
-$| = 1;
+##############################################################################
+# Output functions
+##############################################################################
 
-sub bundle_quote (@) {
-    my @arg = @_;
-    for ( @arg ) { s/([\\\"\'\$\s])/\\$1/g; s/(\\\n)/\'$1\'/g;
-                   s/^\\\$(ORIG|DEST)/\$$1/; }
-    return join(' ',@arg);
+# Print a header using equal signs.
+sub header ( $ ) {
+    my ($header) = @_;
+    my $space = length ($header) + 4;
+    my $lead = (74 - $space) / 2;
+    $header = '  ' . $header . '  ';
+    my $out = '=' x $lead . $header . '=' x (74 - $lead - $space) . "\n";
+    print $out unless $QUIET;
+    print LOG $out if $LOGFILE;
 }
 
-sub getacl ($) {
-    my ($dir) = @_;
-    my $acl = "";
-    my $prefix = "";
-    my ($ptsentity, $permissions) = ("","");
+# Add a file to the changed area.  Takes the name of the file and the prefix
+# (new or old), and returns the file name in the changes area for use with
+# later revert or apply directives.
+sub changes ( $$ ) {
+    my ($file, $type) = @_;
+    return unless $CHANGEDIR;
+    my $new = $file;
+    $new =~ s(^\$(?:ORIG|DEST)) ($type)
+        or die "$0: failed to build file name for $file\n";
+    print CHANGES bundle_quote ('file', $file, $new), "\n";
+    return $new;
+}
+
+# Add something to the revert bundle if appropriate.
+sub revert ( @ ) {
+    my (@action) = @_;
+    return unless $CHANGEDIR;
+    print REVERT bundle_quote (@action), "\n";
+}
+
+# Add something to the apply bundle if appropriate.
+sub apply ( @ ) {
+    my (@action) = @_;
+    return unless $CHANGEDIR;
+    print APPLY bundle_quote (@action), "\n";
+}
+
+# Return the ls-style file listing for a particular file.  This doesn't do any
+# particularly fancy formatting at the moment, although it certainly could.
+# Takes the stat object for the file and a flag that, if set, suppresses the
+# modification time display.
+sub lslout ( $;$ ) {
+    my ($stat, $nodate) = @_;
+    return "---------- NO SUCH FILE????" unless $stat;
+    my $modestr = format_mode ($stat->mode);
+    my $username = getpwuid ($stat->uid) || $stat->uid;
+    my $groupname = getgrgid ($stat->gid) || $stat->gid;
+    my $lastchanged = strftime ('%Y-%m-%d %T', localtime $stat->mtime);
+    my $output = sprintf ("%s %4d %-8s %-8s %8d", $modestr, $stat->nlink,
+                          $username, $groupname, $stat->size);
+    $output .= " $lastchanged" unless $nodate;
+    return $output;
+}
+
+# Print the name of a file.  This will eventually do some programmatic munging
+# of the file name on the way out the door.  Takes a prefix, the file name,
+# and then a suffix if any.
+sub print_name ( $$;$ ) {
+    my ($prefix, $name, $suffix) = @_;
+    if (defined $suffix) {
+        $suffix = ' ' . $suffix;
+    } else {
+        $suffix = '';
+    }
+    $name =~ s/^$ROOTRW\E/.../ if $MUNGE;
+    print "$prefix: $name$suffix\n" unless $QUIET;
+    print LOG "$prefix: $name$suffix\n" if $LOGFILE;
+}
+
+# Print the ls-style file listing for a file, the symlink value, or the mount
+# point value.  Takes the prefix and the info hash, and an optional flag
+# saying whether to display the directory listing even if this is a mount
+# point.
+sub print_ls ( $$;$ ) {
+    my ($prefix, $info, $forcels) = @_;
+    my $output;
+    if ($$info{islink}) {
+        $output = "-> $$info{link}";
+    } elsif (defined $$info{volume} && !$forcels) {
+        $output = "-> #$$info{volume}";
+    } else {
+        $output = lslout ($$info{stat});
+    }
+    $output = '  ' . ($prefix ? $prefix . ': ' : '') . $output;
+    print $output, "\n" unless $QUIET;
+    print LOG $output, "\n" if $LOGFILE;
+}
+
+# Print an ACL list, taking a prefix.
+sub print_acl ( $$ ) {
+    my ($prefix, $acl) = @_;
+    my $output = '  ACL ' . $prefix . ': ' . $acl . "\n";
+    print $output unless $QUIET;
+    print LOG $output if $LOGFILE;
+}
+
+# Run diff on two files if we're configured to do so and they're both text
+# files.  Print the diff output if it's under the configured limit; otherwise
+# print a message saying the output has been suppressed.
+sub print_diff ( $$ ) {
+    my ($old, $new) = @_;
+    return '' if $NODIFF;
+    return '' unless (-T $old && -T $new);
+
+    # Fork diff carefully.
+    my $pid = open (DIFF, '-|');
+    if (!defined $pid) {
+        die "$0: cannot fork: $!\n";
+    } elsif ($pid == 0) {
+        open (STDERR, '>&STDOUT') or die "$0: cannot dup stdout: $!\n";
+        exec ($DIFF, '-u', $old, $new)
+            or die "$0: cannot exec $DIFF -u $old $new: $!\n";
+    }
+
+    # Gather the output.
     local $_;
-    
-    return "NOT_IN_AFS" unless ( $dir =~ /^\/afs/);
-    my $pid = open(LISTACL, '-|');
-    if ( !defined $pid ) {
-        die "Unable to perform listacl on $dir: $!\n";
-    } elsif ( $pid == 0 ) {
-        exec($fs,'listacl',$dir)
-            or die "Can't exec fs listacl on $dir: $!\n";
+    my (@diff, $diff);
+    while (<DIFF>) {
+        s{(\s)(?:\Q$ROOTRW\E|\Q$ROOTRO\E)} {$1...} if $. <= 2;
+        push (@diff, $_) if $. <= $MAXDIFF;
     }
+    my $output;
+    if ($. > $MAXDIFF) {
+        $output = "    LARGE diff output suppressed, $. lines\n";
+    } else {
+        $output = join ('', @diff);
+    }
+    close DIFF;
+    print $output unless $QUIET;
+    print LOG $output if $LOGFILE;
+}
+
+##############################################################################
+# AFS information
+##############################################################################
+
+# Given a mount point, get the volume name of the volume mounted there or
+# undef if it is not a mount point.
+sub lsmount ( $ ) {
+    my ($path) = @_;
+    my $pid = open (LSMOUNT, '-|');
+    if (!defined $pid) {
+        die "$0: cannot fork: $!\n";
+    } elsif ($pid == 0) {
+        open (STDERR, '>&STDOUT') or die "$0: cannot dup stdout: $!\n";
+        exec ($FS, 'lsmount', $path)
+            or die "$0: cannot exec $FS lsmount for $path: $!\n";
+    }
+    local $/;
+    my $output = <LSMOUNT>;
+    close LSMOUNT;
+    print map { "===> $_ ($?)\n" } split (/\n/, $output) if $DEBUG;
+    return if ($? != 0);
+    my ($name) =
+        ($output =~ /^\S+ is a mount point for volume \'[%\#](\S+)\'$/);
+    return $name;
+}
+
+# Get the ACL for a directory, returning the ACL as a dense, comma-separated
+# string.  Map full privileges to "all" and prefix negative rights with --
+# (which may be theoretically ambiguous, but shouldn't be a problem in
+# practice).  Returns NOT_IN_AFS if the path is apparently not in AFS.
+sub getacl ( $ ) {
+    my ($dir) = @_;
+
+    # Fork off fs listacl carefully.
+    my $pid = open (LISTACL, '-|');
+    if (!defined $pid) {
+        die "$0: cannot fork: $!\n";
+    } elsif ($pid == 0) {
+        open (STDERR, '>&STDOUT') or die "$0: cannot dup stdout: $!\n";
+        exec ($FS, 'listacl', $dir)
+            or die "$0: cannot exec $FS listacl for $dir: $!\n";
+    }
+
+    # Read the results.  The first line is either a header or an error
+    # message; if it's an error message, check to see if it says that the path
+    # isn't in AFS and return NOT_IN_AFS in that situation.  Otherwise, look
+    # for the "Normal rights:" and "Negative rights:" headers.  Assume that
+    # all negative rights come after all normal rights.
+    local $_;
+    my $error = <LISTACL>;
+    if ($error =~ /it is possible that .* is not in AFS/) {
+        return 'NOT_IN_AFS';
+    }
+    my ($acl, $prefix) = ('', '');
     while (<LISTACL>) {
-        next if ( $. <= 1 );
         next if /Normal rights:/;
-        if ( /Negative rights:/ ) { $prefix = "--" ; next; } ;
-        ($ptsentity, $permissions) = split(' ');
-        $permissions =~ s/rlidwka/all/;
-        $acl .= "$prefix$ptsentity=$permissions,"
+        if (/Negative rights:/) {
+            $prefix = '--';
+            next;
+        }
+        my ($pts, $perms) = split;
+        $perms = 'all' if $perms eq 'rlidwka';
+        $acl .= $prefix . $pts . '=' . $perms . ',';
     }
-    close(LISTACL);
+    close LISTACL;
+    if ($? != 0) {
+        warn $error;
+        die "$0: $FS listacl failed for $dir with status ", ($? >> 8), "\n";
+    }
     $acl =~ s/,$//;
     return $acl;
 }
-            
-sub modestr ($) {
-    my ($mode) = @_;
-    my $outstr = "?---------";
-    
-    #print "mode=:",$mode, ":\n";
-    if (($mode & $S_IFMT) == $S_IFDIR) { substr($outstr,0,1) = "d"; }
-    elsif (($mode & $S_IFMT) == $S_IFLNK) { substr($outstr,0,1) = "l"; }
-    elsif (($mode & $S_IFMT) == $S_IFBLK) { substr($outstr,0,1) = "b"; }
-    elsif (($mode & $S_IFMT) == $S_IFCHR) { substr($outstr,0,1) = "c"; }
-    elsif (($mode & $S_IFMT) == $S_IFNAM) { substr($outstr,0,1) = "p"; }
-    elsif (($mode & $S_IFMT) == $S_IFREG) { substr($outstr,0,1) = "-"; }
-    elsif (($mode & $S_IFMT) == $S_IFIFO) { substr($outstr,0,1) = "|"; }
-    
-    if (($mode & $S_IAMB) & $S_IRUSR) { substr($outstr,1,1) = "r" }
-    if (($mode & $S_IAMB) & $S_IWUSR) { substr($outstr,2,1) = "w" }
-    if (($mode & $S_IAMB) & $S_IXUSR) { substr($outstr,3,1) = "x" }
-    if (($mode & $S_IAMB) & $S_IRGRP) { substr($outstr,4,1) = "r" }
-    if (($mode & $S_IAMB) & $S_IWGRP) { substr($outstr,5,1) = "w" }
-    if (($mode & $S_IAMB) & $S_IXGRP) { substr($outstr,6,1) = "x" }
-    if (($mode & $S_IAMB) & $S_IROTH) { substr($outstr,7,1) = "r" }
-    if (($mode & $S_IAMB) & $S_IWOTH) { substr($outstr,8,1) = "w" }
-    if (($mode & $S_IAMB) & $S_IXOTH) { substr($outstr,9,1) = "x" }
-    
-    if ($mode & $S_ISUID) {
-        if ($mode & $S_IXUSR) { substr($outstr,3,1) = "s" }
-        else { substr($outstr,3,1) = "S" }
-    }
-    if ($mode & $S_ISGID) {
-        if ($mode & $S_IXGRP) { substr($outstr,6,1) = "s" }
-        else { substr($outstr,6,1) = "S" }
-    }
-    if ($mode & $S_ISVTX) {
-        if ($mode & $S_IXOTH) { substr($outstr,9,1) = "t" }
-        else { substr($outstr,3,1) = "T" }
-    }
-    
-    return $outstr;
-}
-                         
-sub lslout ($$$$$$$) {
-    my ($mode, $link, $uid, $gid, $size, $mtime, $nodate) = @_;
-    my $output;
-    return "---------- NO SUCH FILE????" unless defined($mode);
-    confess if "$mode" eq "";
-    #print "lsloutmode=:",$mode,":\n";
-    my $modestr = modestr($mode);
-    my $username = getpwuid($uid) || $uid;
-    my $grname = getgrgid($gid) || $gid;
-    my $lastchanged = ctime($mtime);
-    chomp($lastchanged);
-    $output = "$modestr   $link   $username   $grname   $size";
-    $output .= "   $lastchanged" unless $nodate;
-    return $output;
-}
-                                     
-sub wantedrw {
-    $rw = $File::Find::name;
-    $ro = $rw;
-    $ro =~ s:^\Q$startrw\E:$startro: ;
-    ($rwtrim = $rw) =~ s:^(/afs/(\.)?ir)\.stanford\.edu:$1:;
-    ($rotrim = $ro) =~ s:^(/afs/(\.)?ir)\.stanford\.edu:$1:;
-    if ( $opt_changedir ) {
-        ($rotidy = $rotrim) =~ s:^\Q$startrotrim\E:\$ORIG:;
-        ($rwtidy = $rwtrim) =~ s:^\Q$startrwtrim\E:\$DEST:;
-    }
 
-    ($rwdev,$rwino,$rwmode,$rwlink,$rwuid,
-     $rwgid,$rwrdev,$rwsize,$rwatime,
-     $rwmtime,$rwctime,$rwblksize,$rwblocks) = lstat($rw);
-    $rwexists = (-e _);
-    $rwmodeoctal = sprintf("%lo", $rwmode & $S_IAMB) if $rwexists;
-    $rwislink = (-l _);
-    $rwlink = readlink ($rw) if $rwislink;
-    $rwisdir  = (-d _);
-    if ( $rwisdir ) {
-        $rwmtpt = `$fs lsmount $rw  2>&1`;
-        $rwismtpt = ( $? == 0 ) ;
-        $rwmtpt =~ s/.*a mount point for volume \'\#(\S+)\'\s+$/$1/ 
-            if $rwismtpt;
-        $rwacl = getacl($rw);
-    }
-    
-    ($rodev,$roino,$romode,$rolink,$rouid,
-     $rogid,$rordev,$rosize,$roatime,
-     $romtime,$roctime,$roblksize,$roblocks) = lstat($ro);
-    $roexists = (-e _);
-    $romodeoctal = sprintf("%lo", $romode & $S_IAMB) if $roexists;
-    $roislink = (-l _);
-    $rolink = readlink ($ro) if $roislink;
-    $roisdir  = (-d _);
-    if ($roisdir) {
-        $romtpt = `$fs lsmount $ro  2>&1`;
-        $roismtpt = ( $? == 0 ) ;
-        $romtpt =~ s/.*a mount point for volume \'\#(\S+)\'\s+$/$1/ 
-            if $roismtpt;
-        $roacl = getacl($ro);
-    }
-    
-    if ( ! $roexists ) { # New things springing into existence
-        if ( $rwislink ) { # New symlink
-            print "New link: $rwtrim\n";  
-            print "  -> $rwlink\n";
-            if ( $opt_changedir ) {
-                print REVERT bundle_quote('delete', $rwtidy), "\n";
-                print APPLY  bundle_quote('link', $rwlink, $rwtidy), "\n";
-            }
-        } elsif ( $rwisdir ) { # New directory or mountpoint
-            if ( $rwismtpt ) { # New mountpoint
-                print "New mountpoint: $rwtrim -> \#$rwmtpt\n";  
-                print "  ACL is: $rwacl\n";
-                if ( $rw ne $startrw ) { $File::Find::prune = 1; return; }
-                if ( $opt_changedir ) {
-                    print REVERT bundle_quote('system', $fs, 
-                                              'rmm', $rwtidy), "\n";
-                    print APPLY  bundle_quote('system', $fs, 
-                                              'mkm', $rwtidy, $rwmtpt), "\n"
-                }
-            } else { # Directory but not mountpoint
-                print "New directory: $rwtrim\n";
-                $rwlsout = lslout($rwmode,$rwlink,$rwuid,$rwgid,
-                                  $rwsize,$rwmtime,0);
-                print "  $rwlsout\n";
-                print "  ACL is: $rwacl\n";
-                if ( $opt_changedir ) {
-                    ($newacl = $rwacl) =~ s/(=|,)/ /g;
-                    print REVERT bundle_quote('system', '/bin/rm', '-rf', 
-                                              $rwtidy), "\n";
-                    print APPLY  bundle_quote('dir', $rwtidy, "owner=$rwuid", 
-                                              "group=$rwgid", 
-                                              "mode=$rwmodeoctal", 
-                                              "atime=$rwatime", 
-                                              "mtime=$rwmtime"), "\n";
-                    print APPLY  bundle_quote('system', $fs, 
-                                              'setacl', $rwtidy, split(' ',$newacl), 
-                                              '-clear'), "\n";
-                }
-            }
-        } else { # New, but not a link, dir, or mountpoint
-            print "New: $rwtrim\n";
-            $rwlsout = lslout($rwmode,$rwlink,$rwuid,$rwgid,
-                              $rwsize,$rwmtime,0);
-            print "  $rwlsout\n";
-            if ( $opt_changedir ) {
-                $newloc = "new$rwtrim";
-                $newloc =~ s:^new\Q$startrwtrim\E:new:;
-                print CHANGES bundle_quote('file', $rwtidy, $newloc), "\n";
-                print REVERT  bundle_quote('delete', $rwtidy), "\n";
-                print APPLY   bundle_quote('file', $newloc, $rwtidy), "\n";
-            }
-        }
-    } elsif ( $rwislink ) {
-        if ( $roislink ) {
-            if ( $rwlink ne $rolink ) {
-                print "Link change: $rwtrim\n";
-                print "  Link WAS: $rolink\n  Link NOW: $rwlink\n";
-                if ( $opt_changedir ) {
-                    print REVERT bundle_quote('delete', $rwtidy), "\n";
-                    print REVERT bundle_quote('link', $rolink, $rwtidy), "\n";
-                    print APPLY  bundle_quote('delete', $rwtidy), "\n";
-                    print APPLY  bundle_quote('link', $rwlink, $rwtidy), "\n";
-                }
-            }
-        } elsif ( $roisdir ) {
-            if ( $roismtpt ) {
-                print "Mountpoint replaced by link: $rwtrim\n";
-                print "  WAS: -> \#$romtpt\n";
-                print "  NOW: $rwlink\n";
-                if ( $opt_changedir ) {
-                    print REVERT bundle_quote('delete', $rwtidy), "\n";
-                    print REVERT bundle_quote('system', $fs, 
-                                              'mkm', $rwtidy, $romtpt), "\n";
-                    print APPLY  bundle_quote('system', $fs, 
-                                              'rmm', $rwtidy), "\n";
-                    print APPLY  bundle_quote('link', $rwlink, $rwtidy), "\n";
-                }
-            } else { 
-                print "Directory replaced by link: $rwtrim\n";
-                $rolsout = lslout($romode,$rolink,$rouid,$rogid,
-                                  $rosize,$romtime,0);
-                print "  WAS: $rolsout\n";
-                print "  NOW: $rwlink\n";
-                if ( $opt_changedir ) {
-                    print REVERT bundle_quote('delete', $rwtidy), "\n";
-                    print REVERT bundle_quote('dir', $rwtidy, "owner=$rouid", 
-                                              "group=$rogid", 
-                                              "mode=$romodeoctal", 
-                                              "atime=$rwatime", 
-                                              "mtime=$rwmtime"), "\n";
-                    print APPLY  bundle_quote('system', '/bin/rm', '-rf', 
-                                              $rwtidy), "\n";
-                    print APPLY  bundle_quote('link', $rwlink, $rwtidy), "\n";
-                }
-            }
-        } else { # Replaces link, not link, dir, or mountpoint
-            print "Non-link replaced by link: $rwtrim\n";
-            $rolsout = lslout($romode,$rolink,$rouid,$rogid,
-                              $rosize,$romtime,0);
-            print "  WAS: $rolsout\n";
-            print "  NOW: $rwlink\n";
-            if ( $opt_changedir ) {
-                $oldloc = "old$rwtrim";
-                $oldloc =~ s:^old\Q$startrwtrim\E:old:;
-                print CHANGES bundle_quote('file', $rotidy, $oldloc), "\n";
-                print REVERT  bundle_quote('file', $oldloc, $rwtidy), "\n";
-                print APPLY   bundle_quote('delete', $rwtidy), "\n";
-                print APPLY   bundle_quote('link', $rwlink, $rwtidy), "\n";
-            }
-        } 
-    } elsif ( $rwisdir ) {
-        if ( $rwismtpt ) {
-            if ( $roislink ) {
-                print "Link replaced by mountpoint: $rwtrim\n";
-                print "  WAS: $rolink\n";
-                print "  NOW: -> \#$rwmtpt\n";
-                if ( $opt_changedir ) {
-                    print REVERT bundle_quote('system', $fs, 
-                                              'rmm', $rwtidy), "\n";
-                    print REVERT bundle_quote('link', $rolink, $rwtidy), "\n";
-                    print APPLY  bundle_quote('delete', $rwtidy), "\n";
-                    print APPLY  bundle_quote('system', $fs, 
-                                              'mkm', $rwtidy, $rwmtpt), "\n"
-                }
-                if ( $rw ne $startrw && ! $opt_crossmountpoints ) 
-                    { $File::Find::prune = 1; return; }
-            } elsif ( $roisdir ) {
-                if ( $roismtpt ) {
-                    if ( $rwmtpt ne $romtpt ) {
-                        print "Mountpoint change: $rwtrim\n";
-                        print "  WAS: -> $romtpt\n";
-                        print "  NOW: -> $rwmtpt\n";
-                        if ( $opt_changedir && $rw ne $startrw ) {
-                            print REVERT 
-                                bundle_quote('system', $fs, 
-                                             'rmm', $rwtidy), "\n";
-                            print REVERT
-                                bundle_quote('system', $fs, 
-                                             'mkm', $rwtidy, $romtpt), "\n";
-                            print APPLY 
-                                bundle_quote('system', $fs, 
-                                             'rmm', $rwtidy), "\n";
-                            print APPLY  
-                                bundle_quote('system', $fs, 
-                                             'mkm', $rwtidy, $rwmtpt), "\n";
-                        }
-                    }
-                    if ( ( $rw eq $startrw || $opt_crossmountpoints )
-                         && $rwacl ne $roacl ) {
-                        print "ACL changed: $rwtrim\n";
-                        print "  ACL WAS: $roacl\n";
-                        print "  ACL NOW: $rwacl\n";
-                        if ( $opt_changedir ) {
-                            ($newacl = $rwacl) =~ s/(=|,)/ /g;
-                            ($oldacl = $roacl) =~ s/(=|,)/ /g;
-                            print REVERT 
-                                bundle_quote('system', $fs, 
-                                             'setacl', $rwtidy, split(' ',$oldacl), 
-                                             '-clear'), "\n";
-                            print APPLY  
-                                bundle_quote('system', $fs, 
-                                             'setacl', $rwtidy, split(' ',$newacl), 
-                                             '-clear'), "\n";
-                        }
-                    }
-                    if ( $rw ne $startrw && ! $opt_crossmountpoints ) 
-                        { $File::Find::prune = 1; return; }
-                } else { # RW is mtpt, RO is regular dir
-                    print "Directory replaced by mountpoint: $rwtrim\n";
-                    $rolsout = lslout($romode,$rolink,$rouid,$rogid,
-                                      $rosize,$romtime,0);
-                    print "  WAS: $rolsout\n";
-                    print "  NOW: -> \#$rwmtpt\n";
-                    if ( $opt_changedir ) {
-                        print REVERT 
-                            bundle_quote('system', $fs, 'rmm', 
-                                         $rwtidy), "\n";
-                        print REVERT 
-                            bundle_quote('dir', $rwtidy, "owner=$rouid", 
-                                         "group=$rogid", "mode=$romodeoctal", 
-                                         "atime=$roatime", "mtime=$romtime"), 
-                            "\n";
-                        print APPLY  bundle_quote('system', '/bin/rm', '-rf', 
-                                                  $rwtidy), "\n";
-                        print APPLY
-                            bundle_quote('system', $fs, 'mkm', 
-                                         $rwtidy, $rwmtpt), "\n";
-                    }
-                    if ( $rw ne $startrw && ! $opt_crossmountpoints ) 
-                        { $File::Find::prune = 1; return; }
-                }
-            } else { # RW is mtpt, RO neither link, dir or mtpt
-                print "File replaced by mountpoint: $rwtrim\n";
-                $rolsout = lslout($romode,$rolink,$rouid,$rogid,
-                                  $rosize,$romtime,0);
-                print "  WAS: $rolsout\n";
-                print "  NOW: -> \#$rwmtpt\n";
-                if ( $opt_changedir ) {
-                    $oldloc = "old$rwtrim";
-                    $oldloc =~ s:^old\Q$startrwtrim\E:old:;
-                    print CHANGES bundle_quote('file', $rotidy, $oldloc), "\n";
-                    print REVERT 
-                        bundle_quote('system', $fs, 'rmm', 
-                                     $rwtidy), "\n";
-                    print REVERT  bundle_quote('file', $oldloc, $rwtidy), "\n";
-                    print APPLY   bundle_quote('delete', $rwtidy), "\n";
-                    print APPLY
-                        bundle_quote('system', $fs, 'mkm', 
-                                     $rwtidy, $rwmtpt), "\n";
-                }
-                if ( $rw ne $startrw && ! $opt_crossmountpoints ) 
-                    { $File::Find::prune = 1; return; }
-            }
-        } else { # RW is Regular directory, not mountpoint
-            $rwlsout = lslout($rwmode,$rwlink,$rwuid,$rwgid,
-                              $rwsize,$rwmtime,0);
-            if ( $roislink ) {
-                print "Link replaced by directory: $rwtrim\n";
-                print "  WAS: $rolink\n";
-                print "  NOW: $rwlsout\n";
-                if ( $opt_changedir ) {
-                    print REVERT  bundle_quote('system', '/bin/rm', '-rf', 
-                                               $rwtidy), "\n";
-                    print REVERT  bundle_quote('link', $rolink, $rwtidy), "\n";
-                    print APPLY   bundle_quote('delete', $rwtidy), "\n";
-                    print APPLY   
-                        bundle_quote('dir', $rwtidy, "owner=$rwuid", 
-                                     "group=$rwgid", "mode=$rwmodeoctal", 
-                                     "atime=$rwatime", "mtime=$rwmtime"), "\n";
-                }
-            } elsif ( $roisdir ) { # RW is regular dir, RO is dir
-                if ( $roismtpt ) { # RW regular dir, RO mtpt
-                    print "Mountpoint replaced by directory: $rwtrim\n";
-                    print "  WAS: -> \#$romtpt\n";
-                    print "  NOW: $rwlsout\n";
-                    if ( $opt_changedir ) {
-                        print REVERT bundle_quote('system', '/bin/rm', '-rf', 
-                                                  $rwtidy), "\n";
-                        print REVERT
-                            bundle_quote('system', $fs, 'mkm', 
-                                         $rwtidy, $romtpt), "\n";
-                        print APPLY 
-                            bundle_quote('system', $fs, 'rmm', 
-                                         $rwtidy), "\n";
-                        print APPLY 
-                            bundle_quote('dir', $rwtidy, "owner=$rwuid", 
-                                         "group=$rwgid", "mode=$rwmodeoctal", 
-                                         "atime=$rwatime", "mtime=$rwmtime"), 
-                            "\n";
-                    }
-                } else {        # RW and RO are both regular directories
-                    $rwlsout = lslout($rwmode,$rwlink,$rwuid,$rwgid,
-                                      $rwsize,$rwmtime,1);
-                    $rolsout = lslout($romode,$rolink,$rouid,$rogid,
-                                      $rosize,$romtime,1);
-                    if ( $rwlsout ne $rolsout ) {
-                        print "Changed (dirs): $rwtrim\n";
-                        print "  WAS: $rolsout\n";
-                        print "  NOW: $rwlsout\n";
-                        if ( $opt_changedir ) {
-                            print REVERT bundle_quote('dir', $rwtidy,
-                                                      "owner=$rouid",
-                                                      "group=$rogid",
-                                                      "mode=$romodeoctal",
-                                                      "atime=$roatime",
-                                                      "mtime=$romtime"), 
-                            "\n";
-                            print APPLY  bundle_quote('dir', $rwtidy,
-                                                      "owner=$rwuid",
-                                                      "group=$rwgid",
-                                                      "mode=$rwmodeoctal",
-                                                      "atime=$rwatime",
-                                                      "mtime=$rwmtime"), 
-                            "\n";
-                        }
-                    }
-                }
-                if ( $rwacl ne $roacl ) {
-                    print "ACL changed: $rwtrim\n";
-                    print "  ACL WAS: $roacl\n";
-                    print "  ACL NOW: $rwacl\n";
-                    if ( $opt_changedir ) {
-                        ($newacl = $rwacl) =~ s/(=|,)/ /g;
-                        ($oldacl = $roacl) =~ s/(=|,)/ /g;
-                        print REVERT 
-                            bundle_quote('system', $fs, 
-                                         'setacl', $rwtidy, split(' ',$oldacl), 
-                                         '-clear'), "\n";
-                        print APPLY  
-                            bundle_quote('system', $fs, 
-                                         'setacl', $rwtidy, split(' ',$newacl), 
-                                         '-clear'), "\n";
-                    }
-                }
-            } else {  # RW is regular dir, RO is neither link, dir, or mtpt
-                print "File replaced by directory: $rwtrim\n";
-                $rolsout = lslout($romode,$rolink,$rouid,$rogid,
-                                  $rosize,$romtime,0);
-                print "  WAS: $rolsout\n";
-                print "  NOW: $rwlsout\n";
-                if ( $opt_changedir ) {
-                    $oldloc = "old$rwtrim";
-                    $oldloc =~ s:^old\Q$startrwtrim\E:old:;
-                    print CHANGES bundle_quote('file', $rotidy, $oldloc), "\n";
-                    print REVERT  bundle_quote('system', '/bin/rm', '-rf', 
-                                               $rwtidy), "\n";
-                    print REVERT  bundle_quote('file', $oldloc, $rwtidy), "\n";
-                    print APPLY   bundle_quote('delete', $rwtidy), "\n";
-                    print APPLY   bundle_quote('dir', $rwtidy, "owner=$rwuid", 
-                                               "group=$rwgid", 
-                                               "mode=$rwmodeoctal", 
-                                               "atime=$rwatime", 
-                                               "mtime=$rwmtime"), "\n";
-                }
-            }
-        } 
-    } else {                    # RW is not link, directory, or mountpoint
-        $rwlsout = lslout($rwmode,$rwlink,$rwuid,$rwgid,$rwsize,$rwmtime,0);
-        if ( $roislink ) {      # RW is file, RO is link
-            print "Link replaced by non-link: $rwtrim\n";
-            print "  WAS: $rolink\n";
-            print "  NOW: $rwlsout\n";
-            if ( $opt_changedir ) {
-                $newloc = "new$rwtrim";
-                $newloc =~ s:^new\Q$startrwtrim\E:new:;
-                print CHANGES bundle_quote('file', $rwtidy, $newloc), "\n";
-                print REVERT  bundle_quote('delete', $rwtidy), "\n";
-                print REVERT  bundle_quote('link', $rolink, $rwtidy), "\n";
-                print APPLY   bundle_quote('delete', $rwtidy), "\n";
-                print APPLY   bundle_quote('file', $newloc, $rwtidy), "\n";
-            }
-        } elsif ( $roisdir ) {  # RW is file, RO is dir or mtpt
-            if ( $roismtpt ) {  # RW is file, RO is mountpoint
-                print "Mountpoint replaced by non-mountpoint: $rwtrim\n";
-                print "  WAS: -> \#$romtpt\n";
-                if ( $opt_changedir ) {
-                    $newloc = "new$rwtrim";
-                    $newloc =~ s:^new\Q$startrwtrim\E:new:;
-                    print CHANGES bundle_quote('file', $rwtidy, $newloc), "\n";
-                    print REVERT  bundle_quote('delete', $rwtidy), "\n";
-                    print REVERT
-                        bundle_quote('system', $fs, 'mkm', 
-                                     $rwtidy, $romtpt), "\n";
-                    print APPLY 
-                        bundle_quote('system', $fs, 'rmm', 
-                                     $rwtidy), "\n";
-                    print APPLY   bundle_quote('file', $newloc, $rwtidy), "\n";
-                }
-            } else {            # RW is file, RO is regular dir
-                $rolsout = lslout($romode,$rolink,$rouid,$rogid,$rosize,$romtime,0);
-                print "Directory replaced by non-directory: $rwtrim\n";
-                print "  WAS: $rolsout\n";
-                if ( $opt_changedir ) {
-                    $newloc = "new$rwtrim";
-                    $newloc =~ s:^new\Q$startrwtrim\E:new:;
-                    print CHANGES bundle_quote('file', $rwtidy, $newloc), "\n";
-                    print REVERT  bundle_quote('delete', $rwtidy), "\n";
-                    print REVERT  
-                        bundle_quote('dir', $rwtidy, "owner=$rouid", 
-                                     "group=$rogid", "mode=$romodeoctal", 
-                                     "atime=$roatime", "mtime=$romtime"), "\n";
-                    print APPLY   bundle_quote('system', '/bin/rm', '-rf', 
-                                               $rwtidy), "\n";
-                    print APPLY   bundle_quote('file', $newloc, $rwtidy), "\n";
-                }
-            }
-            print "  NOW: $rwlsout\n";
-        } else {                # RW is file, RO is too.
-            $rolsout = lslout($romode,$rolink,$rouid,$rogid,$rosize,$romtime,0);
-            if ( $rwlsout ne $rolsout ){
-                print "Changed: $rwtrim\n";
-                print "  WAS: $rolsout\n";
-                print "  NOW: $rwlsout\n";
-                if (!$opt_suppressdiffs && -T $rw && -T $ro) {
-                    local $_;
-                    my @diffs = ();
-                    
-                    open(DIFFOUT, "/usr/pubsw/bin/diff -u \Q$ro\E \Q$rw\E |") 
-                        or die "Can't fork diff: $!\n";
-                    while (<DIFFOUT>) {
-                        if ($. <= 2) {
-                            s/(\Q$startrw\E|\Q$startro\E)/.../;
-                        }
-                        if ($. <= $maxdifflines) {
-                            push @diffs, $_;
-                        }
-                    }
-                    if ($. >= $maxdifflines) {
-                        print "    LARGE diff output suppressed, $. lines\n";
-                    } else {
-                        my $line;
-                        foreach $line (@diffs) {
-                            print $line;
-                        }
-                    }
-                    close(DIFFOUT);
-                }
-                if ( $opt_changedir ) {
-                    $oldloc = "old$rwtrim";
-                    $oldloc =~ s:^old\Q$startrwtrim\E:old:;
-                    $newloc = "new$rwtrim";
-                    $newloc =~ s:^new\Q$startrwtrim\E:new:;
-                    print CHANGES bundle_quote('file', $rotidy, $oldloc), "\n";
-                    print CHANGES bundle_quote('file', $rwtidy, $newloc), "\n";
-                    print REVERT  bundle_quote('delete', $rwtidy), "\n";
-                    print REVERT  bundle_quote('file', $oldloc, $rwtidy), "\n";
-                    print APPLY   bundle_quote('delete', $rwtidy), "\n";
-                    print APPLY   bundle_quote('file', $newloc, $rwtidy), "\n";
-                }
+##############################################################################
+# Analysis
+##############################################################################
+
+# Gather information about a file and return it as a hash.  The keys of the
+# hash are set as follows:  stat gets a File::stat object for it, islink and
+# isdir are booleans indicating whether the file is a link or a directory,
+# link holds the value of the link if it is a link, volume holds the volume it
+# is a mount point for if it is a mount point and undef otherwise, and acl
+# holds the ACL for the directory if it is a directory.
+sub examine ( $ ) {
+    my ($file) = @_;
+    my %info;
+    $info{name} = $file;
+    $info{stat} = lstat $file;
+    if ($info{stat}) {
+        $info{islink} = -l _;
+        $info{isdir} = -d _;
+        $info{link} = readlink $file if $info{islink};
+        if ($info{isdir}) {
+            $info{volume} = lsmount $file;
+            my $isroot = ($file eq $ROOTRW || $file eq $ROOTRO);
+            if (!defined $info{volume} || $CROSSMOUNT || $isroot) {
+                $info{acl} = getacl $file;
             }
         }
     }
+    return %info;
 }
 
-sub wantedro {
-    $ro = $File::Find::name;
-    $rw = $ro;
-    $rw =~ s:^\Q$startro\E:$startrw: ;
-    ($rwtrim = $rw) =~ s:^(/afs/(\.)?ir)\.stanford\.edu:$1:;
-    ($rotrim = $ro) =~ s:^(/afs/(\.)?ir)\.stanford\.edu:$1:;
-    if ( $opt_changedir ) {
-        ($rotidy = $rotrim) =~ s:^\Q$startrotrim\E:\$ORIG:;
-        ($rwtidy = $rwtrim) =~ s:^\Q$startrwtrim\E:\$DEST:;
+# Print out the appropriate information for something brand new that has
+# appeared (no corresponding file in the read-only path).
+sub compare_new ( $ ) {
+    print "==> Comparing new file\n" if $DEBUG;
+    my %info = %{ $_[0] };
+    if ($info{islink}) {
+        print_name ('New link', $info{name});
+        revert ('delete', $info{bname});
+        apply  ('link', $info{link}, $info{bname});
+    } elsif (defined $info{volume}) {
+        print_name ('New mountpoint', $info{name}, "-> #$info{volume}");
+        revert ('system', $FS, 'rmmount', $info{bname});
+        apply  ('system', $FS, 'mkmount', $info{bname}, $info{volume});
+    } elsif ($info{isdir}) {
+        print_name ('New directory', $info{name});
+        revert ('system', '/bin/rm', '-rf', $info{bname});
+        apply  ('dir', $info{bname}, bundle_mode ($info{stat}));
+        apply  ('system', bundle_setacl ($info{bname}, $info{acl}));
+    } else {
+        print_name ('New', $info{name});
+        my $saved = changes ($info{bname}, 'new');
+        revert ('delete', $info{bname});
+        apply  ('file', $saved, $info{bname});
     }
+    print_ls ('', \%info) unless defined $info{volume};
+    print_acl ('is', $info{acl}) if $info{isdir};
+}
 
-    ($rwdev,$rwino,$rwmode,$rwlink,$rwuid,
-     $rwgid,$rwrdev,$rwsize,$rwatime,
-     $rwmtime,$rwctime,$rwblksize,$rwblocks) = lstat($rw);
-    $rwexists = (-e _);
-    $rwmodeoctal = sprintf("%lo", $rwmode & $S_IAMB) if $rwexists;
-    ($rodev,$roino,$romode,$rolink,$rouid,
-     $rogid,$rordev,$rosize,$roatime,
-     $romtime,$roctime,$roblksize,$roblocks) = lstat($ro);
-    $roexists = (-e _);
-    $romodeoctal = sprintf("%lo", $romode & $S_IAMB) if $roexists;
-    $roislink = (-l _);
-    $rolink = readlink($ro) if $roislink;
-    $roisdir = (-d _);
-    if ($roisdir) {
-        $romtpt = `$fs lsmount $ro  2>&1`;
-        $roismtpt = ( $? == 0 ) ;
-        $romtpt =~ s/.*a mount point for volume \'\#(\S+)\'\s+$/$1/ 
-            if $roismtpt;
+# Print out the appropriate information when the read/write volume has a link.
+# Takes the information for both the read/write and read-only versions.
+sub compare_link ( $$ ) {
+    print "==> Comparing link\n" if $DEBUG;
+    my %rwinfo = %{ $_[0] };
+    my %roinfo = %{ $_[1] };
+    if ($roinfo{islink}) {
+        return if $rwinfo{link} eq $roinfo{link};
+        print_name ('Link change', $rwinfo{name});
+        revert ('link', $roinfo{link}, $rwinfo{bname});
+        apply  ('link', $rwinfo{link}, $rwinfo{bname});
+    } elsif (defined $roinfo{volume}) {
+        print_name ('Mountpoint replaced by link', $rwinfo{name});
+        revert ('delete', $rwinfo{bname});
+        revert ('system', $FS, 'mkmount', $rwinfo{bname}, $roinfo{volume});
+        apply  ('system', $FS, 'rmmount', $rwinfo{bname});
+        apply  ('link', $rwinfo{link}, $rwinfo{bname});
+    } elsif ($roinfo{isdir}) {
+        print_name ('Directory replaced by link', $rwinfo{name});
+        revert ('delete', $rwinfo{bname});
+        revert ('dir', $rwinfo{bname}, bundle_stat ($roinfo{stat}));
+        apply  ('system', '/bin/rm', '-rf', $rwinfo{bname});
+        apply  ('link', $rwinfo{link}, $rwinfo{bname});
+    } else {
+        print_name ('Non-link replaced by link', $rwinfo{name});
+        my $saved = changes ($roinfo{bname}, 'old');
+        revert ('file', $saved, $rwinfo{bname});
+        apply  ('link', $rwinfo{link}, $rwinfo{bname});
     }
+    print_ls ('WAS', \%roinfo);
+    print_ls ('NOW', \%rwinfo);
+}
 
-
-    if ( ! $rwexists ) {
-        if ( $roislink ) {
-            print "Deleted link: $rotrim\n" ;
-            print "  -> $rolink\n";
-            if ( $opt_changedir ) {
-                print REVERT  bundle_quote('link', $rolink, $rwtidy), "\n";
-                print APPLY   bundle_quote('delete', $rwtidy), "\n";
+# Print out the appropriate information when the read/write volume has a mount
+# point.  Takes the information for both the read/write and read-only
+# versions.
+sub compare_mount ( $$ ) {
+    print "==> Comparing mountpoint\n" if $DEBUG;
+    my %rwinfo = %{ $_[0] };
+    my %roinfo = %{ $_[1] };
+    if ($roinfo{islink}) {
+        print_name ('Link replaced by mountpoint', $rwinfo{name});
+        print_ls ('WAS', \%roinfo);
+        print_ls ('NOW', \%rwinfo);
+        revert ('system', $FS, 'rmmount', $rwinfo{bname});
+        revert ('link', $roinfo{link}, $rwinfo{bname});
+        apply  ('delete', $rwinfo{bname});
+        apply  ('system', $FS, 'mkmount', $rwinfo{bname}, $rwinfo{volume});
+    } elsif (defined $roinfo{volume}) {
+        if ($rwinfo{volume} ne $roinfo{volume} && $rwinfo{name} ne $ROOTRW) {
+            print_name ('Mountpoint change', $rwinfo{name});
+            print_ls ('WAS', \%roinfo);
+            print_ls ('NOW', \%rwinfo);
+            revert ('system', $FS, 'rmmount', $rwinfo{bname});
+            revert ('system', $FS, 'mkmount', $rwinfo{bname}, $roinfo{volume});
+            apply  ('system', $FS, 'rmmount', $rwinfo{bname});
+            apply  ('system', $FS, 'mkmount', $rwinfo{bname}, $rwinfo{volume});
+        } elsif ($rwinfo{name} eq $ROOTRW || $CROSSMOUNT) {
+            return unless $rwinfo{stat};
+            my $old = lslout ($roinfo{stat}, 1);
+            my $new = lslout ($rwinfo{stat}, 1);
+            if ($new ne $old) {
+                print_name ('Changed directory', $rwinfo{name});
+                print_ls ('WAS', \%roinfo, 1);
+                print_ls ('NOW', \%rwinfo, 1);
+                revert ('dir', $rwinfo{bname}, bundle_mode ($roinfo{stat}));
+                apply  ('dir', $rwinfo{bname}, bundle_mode ($rwinfo{stat}));
             }
-        } elsif ( $roisdir ) {
-            if ( $roismtpt ) {
-                print "Deleted mountpoint: $rotrim -> \#$romtpt\n";  
-                if ( $opt_changedir ) {
-                    print REVERT  
-                        bundle_quote('system', $fs, 'mkm', 
-                                     $rwtidy, $romtpt), "\n";
-                    print APPLY 
-                        bundle_quote('system', $fs, 'rmm', 
-                                     $rwtidy), "\n";
-                }
-                if ( $ro ne $startro && ! $opt_crossmountpoints ) 
-                    { $File::Find::prune = 1; return; }
-            } else {
-                print "Deleted directory: $rotrim\n";
-#                $rolsout = lslout($romode,$rolink,$rouid,$rogid,$rosize,$romtime,0);
-#                print "  $rolsout\n";
-                if ( $opt_changedir ) {
-                    print REVERT   
-                        bundle_quote('dir', $rwtidy, "owner=$rouid", 
-                                     "group=$rogid", "mode=$romodeoctal", 
-                                     "atime=$roatime", "mtime=$romtime"), "\n";
-                    print APPLY    bundle_quote('system', '/bin/rm', '-rf', 
-                                                $rwtidy), "\n";
-                }
-            }
-        } else {
-            print "Deleted: $rotrim\n";
-#            $rolsout = lslout($romode,$rolink,$rouid,$rogid,$rosize,$romtime,0);
-#            print "  $rolsout\n";
-            if ( $opt_changedir ) {
-                $oldloc = "old$rwtrim";
-                $oldloc =~ s:^old\Q$startrwtrim\E:old:;
-                print CHANGES bundle_quote('file', $rotidy, $oldloc), "\n";
-                print REVERT  bundle_quote('file', $oldloc, $rwtidy), "\n";
-                print APPLY   bundle_quote('delete', $rwtidy), "\n";
-            }
+            return if $rwinfo{acl} eq $roinfo{acl};
+            print_name ('ACL changed', $rwinfo{name});
+            print_acl ('WAS', $roinfo{acl});
+            print_acl ('NOW', $rwinfo{acl});
+            revert ('system', bundle_setacl ($rwinfo{bname}, $roinfo{acl}));
+            apply  ('system', bundle_setacl ($rwinfo{bname}, $rwinfo{acl}));
         }
-    } elsif ( $roisdir && $roismtpt ) {
-        if ( $ro ne $startro && ! $opt_crossmountpoints ) 
-            { $File::Find::prune = 1; return; }
+    } elsif ($roinfo{isdir}) {
+        print_name ('Directory replacd by mountpoint', $rwinfo{name});
+        print_ls ('WAS', \%roinfo);
+        print_ls ('NOW', \%rwinfo);
+        revert ('system', $FS, 'rmmount', $rwinfo{bname});
+        revert ('dir', $rwinfo{bname}, bundle_mode ($roinfo{stat}));
+        apply  ('system', '/bin/rm', '-rf', $rwinfo{bname});
+        apply  ('system', $FS, 'mkmount', $rwinfo{bname}, $rwinfo{volume});
+    } else {
+        print_name ('File replaced by mountpoint', $rwinfo{name});
+        print_ls ('WAS', \%roinfo);
+        print_ls ('NOW', \%rwinfo);
+        my $saved = changes ($roinfo{bname}, 'old');
+        revert ('system', $FS, 'rmmount', $rwinfo{bname});
+        revert ('file', $saved, $rwinfo{bname});
+        apply  ('delete', $rwinfo{bname});
+        apply  ('system', $FS, 'mkmount', $rwinfo{bname}, $rwinfo{volume});
     }
 }
 
+# Print out the appropriate information when the read/write volume has a
+# directory.  Takes the information for both the read/write and read-only
+# versions.
+sub compare_dir ( $$ ) {
+    print "==> Comparing directory\n" if $DEBUG;
+    my %rwinfo = %{ $_[0] };
+    my %roinfo = %{ $_[1] };
+    if ($roinfo{islink}) {
+        print_name ('Link replaced by directory', $rwinfo{name});
+        print_ls ('WAS', \%roinfo);
+        print_ls ('NOW', \%rwinfo);
+        revert ('system', '/bin/rm', '-rf', $rwinfo{bname});
+        revert ('link', $roinfo{link}, $rwinfo{bname});
+        apply  ('delete', $rwinfo{bname});
+        apply  ('dir', $rwinfo{bname}, bundle_mode ($rwinfo{stat}));
+    } elsif (defined $roinfo{volume}) {
+        print_name ('Mountpoint replaced by directory', $rwinfo{name});
+        print_ls ('WAS', \%roinfo);
+        print_ls ('NOW', \%rwinfo);
+        revert ('system', '/bin/rm', '-rf', $rwinfo{bname});
+        revert ('system', $FS, 'mkmount', $rwinfo{bname}, $roinfo{volume});
+        apply  ('system', $FS, 'rmmount', $rwinfo{bname});
+        apply  ('dir', $rwinfo{bname}, bundle_mode ($rwinfo{stat}));
+    } elsif ($roinfo{isdir}) {
+        my $old = lslout ($roinfo{stat}, 1);
+        my $new = lslout ($rwinfo{stat}, 1);
+        if ($new ne $old) {
+            print_name ('Changed directory', $rwinfo{name});
+            print_ls ('WAS', \%roinfo);
+            print_ls ('NOW', \%rwinfo);
+            revert ('dir', $rwinfo{bname}, bundle_mode ($roinfo{stat}));
+            apply  ('dir', $rwinfo{bname}, bundle_mode ($rwinfo{stat}));
+        }
+        if ($rwinfo{acl} ne $roinfo{acl}) {
+            print_name ('ACL changed', $rwinfo{name});
+            print_acl ('WAS', $roinfo{acl});
+            print_acl ('NOW', $rwinfo{acl});
+            revert ('system', bundle_setacl ($rwinfo{bname}, $roinfo{acl}));
+            apply  ('system', bundle_setacl ($rwinfo{bname}, $rwinfo{acl}));
+        }
+    } else {
+        print_name ('File replaced by directory', $rwinfo{name});
+        print_ls ('WAS', \%roinfo);
+        print_ls ('NOW', \%rwinfo);
+        my $saved = changes ($roinfo{bname}, 'old');
+        revert ('system', '/bin/rm', '-rf', $rwinfo{bname});
+        revert ('file', $saved, $rwinfo{bname});
+        apply  ('delete', $rwinfo{bname});
+        apply  ('dir', $rwinfo{bname}, bundle_mode ($rwinfo{stat}));
+    }
+}
+
+# Print out the appropriate information when the read/write volume has a
+# regular file.  Takes the information for both the read/write and read-only
+# versions.
+sub compare_file ( $$ ) {
+    print "==> Comparing file\n" if $DEBUG;
+    my %rwinfo = %{ $_[0] };
+    my %roinfo = %{ $_[1] };
+    if ($roinfo{islink}) {
+        print_name ('Link replaced by non-link', $rwinfo{name});
+        print_ls ('WAS', \%roinfo);
+        print_ls ('NOW', \%rwinfo);
+        my $saved = changes ($rwinfo{bname}, 'new');
+        revert ('link', $roinfo{link}, $rwinfo{bname});
+        apply  ('file', $saved, $rwinfo{bname});
+    } elsif (defined $roinfo{volume}) {
+        print_name ('Mountpoint replaced by file', $rwinfo{name});
+        print_ls ('WAS', \%roinfo);
+        print_ls ('NOW', \%rwinfo);
+        my $saved = changes ($rwinfo{bname}, 'new');
+        revert ('delete', $rwinfo{bname});
+        revert ('system', $FS, 'mkmount', $rwinfo{bname}, $roinfo{volume});
+        apply  ('system', $FS, 'rmmount', $rwinfo{bname});
+        apply  ('file', $saved, $rwinfo{bname});
+    } elsif ($roinfo{isdir}) {
+        print_name ('Directory replaced by file', $rwinfo{name});
+        print_ls ('WAS', \%roinfo);
+        print_ls ('NOW', \%rwinfo);
+        my $saved = changes ($rwinfo{bname}, 'new');
+        revert ('delete', $rwinfo{bname});
+        revert ('dir', $rwinfo{bname}, bundle_mode ($roinfo{stat}));
+        apply  ('system', '/bin/rm', '-rf', $rwinfo{bname});
+        apply  ('file', $saved, $rwinfo{bname});
+    } else {
+        my $newls = lslout ($rwinfo{stat});
+        my $oldls = lslout ($roinfo{stat});
+        return unless $newls ne $oldls;
+        print_name ('Changed', $rwinfo{name});
+        print_ls ('WAS', \%roinfo);
+        print_ls ('NOW', \%rwinfo);
+        print_diff ($roinfo{name}, $rwinfo{name});
+        my $old = changes ($roinfo{bname}, 'old');
+        my $new = changes ($rwinfo{bname}, 'new');
+        revert ('file', $old, $rwinfo{bname});
+        apply  ('file', $new, $rwinfo{bname});
+    }
+}
+
+# Compare in the forward direction (read/write to read-only).  This will pick
+# up file creations and changes, but will not pick up file deletions.  This
+# function is called for each file found in the read/write volume.
+sub analyze_forward {
+    print "=> Inspecting $File::Find::name\n" if $DEBUG;
+    my $rw = $File::Find::name;
+    my $ro = $rw;
+    $ro =~ s(^\Q$ROOTRW\E)($ROOTRO);
+    my %rwinfo = examine ($rw);
+    my %roinfo = examine ($ro);
+    $rwinfo{bname} = bundle_name ($rwinfo{name}, $ROOTRW, 'DEST');
+    $roinfo{bname} = bundle_name ($roinfo{name}, $ROOTRO, 'ORIG');
+
+    # If the stat failed, that probably means that we have a mount point to a
+    # volume that doesn't exist.  Handle that case specially.
+    unless ($rwinfo{stat}) {
+        $rwinfo{volume} = lsmount $rw;
+        return unless defined $rwinfo{volume};
+    }
+
+    # If this was a mount point, prune here.
+    $File::Find::prune = 1
+        if ($rw ne $ROOTRW && $rwinfo{volume} && !$CROSSMOUNT);
+    $File::Find::prune = 1
+        if ($ro ne $ROOTRO && $roinfo{volume} && !$CROSSMOUNT);
+
+    # Do the analysis, or rather call all the individual functions that do the
+    # analysis.
+    if    (!$roinfo{stat})          { compare_new (\%rwinfo)             }
+    elsif ($rwinfo{islink})         { compare_link (\%rwinfo, \%roinfo)  }
+    elsif (defined $rwinfo{volume}) { compare_mount (\%rwinfo, \%roinfo) }
+    elsif ($rwinfo{isdir})          { compare_dir (\%rwinfo, \%roinfo)   }
+    else                            { compare_file (\%rwinfo, \%roinfo)  }
+}
+
+# Compare in the reverse direction (read-only to read/write).  The only thing
+# we pick up here are deletions, so we ignore any case where the object exists
+# in the read/write volume (since we would have reported on it during the
+# forward pass).  This function is called for each file found in the read-only
+# volume.
+sub analyze_reverse {
+    print "=> Inspecting $File::Find::name\n" if $DEBUG;
+    my $ro = $File::Find::name;
+    my $rw = $ro;
+    $rw =~ s(^\Q$ROOTRO\E)($ROOTRW);
+    my %rwinfo = examine ($rw);
+
+    # If this was a mount point, prune here.  Note that we prune based on the
+    # read/write path because we want to be able to avoid the stat of the
+    # read-only side if the read/write side exists.  Because of the forward
+    # pass, this won't cause us to miss anything significant.
+    $File::Find::prune = 1
+        if ($rw ne $ROOTRW && $rwinfo{volume} && !$CROSSMOUNT);
+    return if $rwinfo{stat};
+
+    # Now check the read-only side.  We also prune if the read-only side is a
+    # mount point, of course.
+    my %roinfo = examine ($ro);
+    $File::Find::prune = 1
+        if ($ro ne $ROOTRO && $roinfo{volume} && !$CROSSMOUNT);
+    $rwinfo{bname} = bundle_name ($rwinfo{name}, $ROOTRW, 'DEST');
+    $roinfo{bname} = bundle_name ($roinfo{name}, $ROOTRO, 'ORIG');
+
+    # If stat failed, that probably means that we have a mount point to a
+    # volume that no longer exists.  Handle that case as a special situation.
+    unless ($roinfo{stat}) {
+        $roinfo{volume} = lsmount $ro;
+        return unless defined $roinfo{volume};
+    }
+
+    # Analyze the difference and report appropriately.
+    if ($roinfo{islink}) {
+        print_name ('Deleted link', $rwinfo{name});
+        print_ls ('', \%roinfo);
+        revert ('link', $roinfo{link}, $rwinfo{bname});
+        apply  ('delete', $rwinfo{bname});
+    } elsif (defined $roinfo{volume}) {
+        print_name ('Deleted mountpoint', $rwinfo{name},
+                    "-> #$roinfo{volume}");
+        revert ('system', $FS, 'mkmount', $rwinfo{bname}, $roinfo{volume});
+        apply  ('system', $FS, 'rmmount', $rwinfo{bname});
+    } elsif ($roinfo{isdir}) {
+        print_name ('Deleted directory', $rwinfo{name});
+        revert ('dir', $rwinfo{bname}, bundle_mode ($roinfo{stat}));
+        apply  ('system', '/bin/rm', '-rf', $rwinfo{bname});
+    } else {
+        print_name ('Deleted', $rwinfo{name});
+        my $saved = changes ($roinfo{bname}, 'old');
+        revert ('file', $saved, $rwinfo{bname});
+        apply  ('delete', $rwinfo{bname});
+    }
+}
+
+##############################################################################
+# Main routine
+##############################################################################
+
+# Trim extraneous garbage from the path.
+my $fullpath = $0;
+$0 =~ s%.*/%%;
+
+# Make sure we get output in the right order.
+$| = 1;
+
+# Parse our options.
+my ($help, $nolog, $version);
+Getopt::Long::config ('bundling');
+GetOptions ('cross-mounts|C'     => \$CROSSMOUNT,
+            'change-dir|c=s'     => \$CHANGEDIR,
+            'debug|D'            => \$DEBUG,
+            'max-diff-lines|d=i' => \$MAXDIFF,
+            'help|h'             => \$help,
+            'no-log|L'           => \$nolog,
+            'log-file|l'         => \$LOGFILE,
+            'munge|m'            => \$MUNGE,
+            'quiet|q'            => \$QUIET,
+            'suppress-diff|s'    => \$NODIFF,
+            'version|v'          => \$version) or exit 1;
+if ($help) {
+    print "Feeding myself to perldoc, please wait....\n";
+    exec ('perldoc', '-t', $fullpath);
+} elsif ($version) {
+    my $version = join (' ', (split (' ', $ID))[1..3]);
+    $version =~ s/,v\b//;
+    $version =~ s/(\S+)$/($1)/;
+    $version =~ tr%/%-%;
+    print $version, "\n";
+    exit 0;
+}
+
+# Check the directories we're given.  If the -m option is used, we should
+# instead have a single argument naming the volume and will be mounting it in
+# the current directory.
+die "Usage: $0 [-CDhLmqsv] [-c <change>] [-d <n>] [-l <log>] <rw> [<ro>]\n"
+    if (@ARGV > 2 || @ARGV < 1);
+my ($rw, $ro, $volume, $mounted);
+if (@ARGV == 1 && $ARGV[0] !~ m%/%) {
+    $MUNGE = 1;
+    $volume = $ARGV[0];
+    $volume =~ s/\.readonly$//;
+    my $rovolume = $volume . '.readonly';
+    $rw = "frak-$volume";
+    $ro = "frak-$rovolume";
+    system ($FS, 'mkmount', $ro, $rovolume) == 0
+        or die "$0: failed to create mount for $rovolume\n";
+    system ($FS, 'mkmount', '-rw', $rw, $volume) == 0
+        or die "$0: failed to create mount for $volume\n";
+    $mounted = 1;
+    $LOGFILE = $volume unless $nolog;
+} else {
+    ($rw, $ro) = @ARGV;
+    if (@ARGV == 1 && $rw =~ m%/afs/[^.]%) {
+        warn "$0: only argument specifies a read-only path, correcting\n";
+        $rw =~ s%/afs/%/afs/.%;
+    }
+    unless ($ro) {
+        $ro = $rw;
+        $ro =~ s%/afs/\.%/afs/%;
+        if ($rw eq $ro) {
+            die "$0: cannot intuit read-only path from read/write path\n";
+        }
+    }
+    $volume = lsmount ($rw);
+    unless (defined $volume) {
+        warn "$0: $rw is not a mountpoint for its volume\n";
+    }
+}
+
+# Get rid of any trailing slashes.
+s%/+$%% for ($rw, $ro);
+
+# Check the validity of the read/write directory.
+die "$0: read/write path $rw not found or not a directory\n"
+    unless -d $rw;
+
+# Set the global variables.
+($ROOTRW, $ROOTRO) = ($rw, $ro);
+
+# If a changedir is requested, set up the file handles and files.
+if ($CHANGEDIR) {
+    open (CHANGES, "> $CHANGEDIR/changes.b")
+        or die "$0: cannot create $CHANGEDIR/changes.b: $!\n";
+    open (REVERT, "> $CHANGEDIR/revert.b")
+        or die "$0: cannot create $CHANGEDIR/revert.b: $!\n";
+    open (APPLY, "> $CHANGEDIR/apply.b")
+        or die "$0: cannot create $CHANGEDIR/apply.b: $!\n";
+    mkdir ("$CHANGEDIR/old", 0755)
+        or die "$0: cannot create $CHANGEDIR/old: $!\n";
+    mkdir ("$CHANGEDIR/new", 0755)
+        or die "$0: cannot create $CHANGEDIR/new: $!\n";
+    print CHANGES "ORIG=", bundle_quote ($ROOTRO), "\n";
+    print CHANGES "DEST=", bundle_quote ($ROOTRW), "\n";
+    print REVERT  "ORIG=", bundle_quote ($ROOTRO), "\n";
+    print REVERT  "DEST=", bundle_quote ($ROOTRW), "\n";
+    print APPLY   "ORIG=", bundle_quote ($ROOTRO), "\n";
+    print APPLY   "DEST=", bundle_quote ($ROOTRW), "\n";
+}
+
+# If a log is requested, create the log file.
+if ($LOGFILE) {
+    open (LOG, "> $LOGFILE")
+        or die "$0: cannot create log file $LOGFILE: $!\n";
+}
+
+# Print the header if we have a volume.
+header ($volume) if defined $volume;
+
+# Do the actual work.
 $File::Find::dont_use_nlink = 1;
+find ({ wanted => \&analyze_forward, no_chdir => 1 }, $ROOTRW);
+print "\n" unless $QUIET;
+print LOG "\n" if $LOGFILE;
+find ({ wanted => \&analyze_reverse, no_chdir => 1 }, $ROOTRO);
+print "\n" unless $QUIET;
+print LOG "\n" if $LOGFILE;
 
-find(\&wantedrw, $startrw);
-print "\n";
-find(\&wantedro, $startro);
-print "\n";
-
-if ( $opt_changedir) {
-    close(CHANGES);
-    close(REVERT);
-    close(APPLY);
+# Remove the mount points if we created them.  Try to do this even if we
+# exited on error.
+END {
+    if ($mounted) {
+        system ($FS, 'rmmount', "frak-$volume.readonly") == 0
+            or warn "$0: cannot remove ro mount point for volume\n";
+        system ($FS, 'rmmount', "frak-$volume") == 0
+            or warn "$0: cannot remove rw mount point for volume\n";
+    }
 }
+
 __END__
 
 ############################################################################
@@ -798,33 +799,214 @@ __END__
 
 =head1 NAME
 
-frak - Show changes between two software trees
+frak - Show changes between two AFS trees
 
 =head1 SYNOPSIS
 
-frak [options] RW_volume_mountpoint [RO_volume_mountpoint]
+frak [B<-CDhLmqsv] [B<-c> I<changedir>] [B<-d> I<max-diff-lines>] [B<-l>
+I<logfile>] (I<volume> | I<rw-path> [ I<ro-path> ])
 
 =head1 DESCRIPTION
 
 B<frak> is a tool for comparing the structure and contents of two directory
-trees in AFS.  Its most common use will be to determine the changes
-contained in a read-write volume relative to the readonly copy of that
-volume.  It can also be used for the comparison of AFS directory copies, and
-to generate bundle files which encapsulate the changes between the two file
-trees which can be used to revert and re-apply those changes, as may be the
-case when a volume containing changes needs to be relocated without
-releasing the changes therein contained.
+trees in AFS.  Its most common use is to determine the changes in a
+read/write AFS volume relative to the read-only copy of the same volume, to
+ensure that it's safe to release, but it can be used to compare any two
+arbitrary AFS trees.  It can even be used in a limited fashion to compare
+non-AFS trees, although in that case C<diff -r> may be more appropriate.
 
-When run with the --changedir option, frak creates the following structure: a changedir directory containing old and new subdirectories to hold the files
-which changed between the two directories, and three bundle files.
-The three bundle files are as follows:
-      changes.b - a bundle to populate the old and new directories
-      revert.b  - a bundle to change the new directory back to the old state
-      apply.b   - a bundle to re-apply the changes into the new state
-The original purpose of this script is to provide a mechanism for reverting
-changes contained in the RW copies of unreleased volumes containing changes
-in order that they can be safely released (for relocation purposes, for 
-example.) and then reapplied back to the state they had been in.
+B<frak> understands mount points and directory ACLs and will detect changes
+in those as well as more typical changes in file size, permissions, or
+existence.  It also knows not to cross mount points (unless given the B<-C>
+option).  Note that two files with the same permissions and the same size
+will be considered identical; the file is not actually compared with diff if
+its other information matches.
+
+If two files are different and are determined to be text files (using the
+C<-T> probe in Perl; see L<perlfunc> for more information), C<diff -u> will
+be run on the two files.  This output will be included in the B<frak> output
+provided it's less than 100 lines long (controllable with B<-d>).
+Otherwise, just the length of the diff in lines will be given.  Diffs can be
+suppressed completely with B<-s>.
+
+The paths to compare may be specified in three ways.  A volume name can be
+given as the sole argument (distinguished from a path by the fact that it
+doesn't contain a C</>).  In this case, the read-only and read-write
+versions of that volume will be mounted in the current working directory (so
+the current working directory must be in AFS), as F<frak-I<volume>> and
+F<frak-I<volume>.readonly>, and then compared.  A path may be given as the
+sole argument, in which case it is taken to be the path to the read-write
+version of the tree and should begin with C</afs/.>.  It will be compared
+against the read-only path to the same tree, formed by removing the period
+after C</afs/>.  Or, finally, two paths may be given, and they will be taken
+to be the read-write path (the newer tree) and the read-only path (the older
+tree) respectively.  Please note that this is the exact opposite order from
+what one would pass to B<diff>.
+
+If a volume is specified, B<frak> will by default log the output to a file
+named after the volume in the current directory, as well as printing the
+output to standard output.  To suppress the file log, use B<-L>.  To
+suppress the output to standard out, use B<-q>.  The name and location of
+the log file can be changed with B<-l>.  If a path is specified, B<frak>
+will by default only print to standard output.  To also log to a file,
+specify a log file location with B<-l>.  In either case, the log file will
+be overwritten if it already exists.
+
+If a volume is specified, paths in the output will be shown relative to the
+root of the volume.  If a path is specified, paths in the output will be
+complete paths unless B<-m> is given.  If B<-m> is given, paths will be
+relative to the root of the tree specified by the path given on the command
+line.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-C>, B<--cross-mounts>
+
+Normally, B<frak> will never cross a mount point.  If this option is given,
+it will keep comparing through mount points.  Be careful when using this
+option, since B<frak> will happily recurse through all AFS file systems in
+the world, and remember that circular path structures are possible in AFS.
+B<frak> does no checking to make sure that it doesn't revisit the same
+volume endlessly.
+
+=item B<-c> I<changedir>, B<--change-dir>=I<changedir>
+
+When given this option, B<frak> creates three bundles I<changedir>, as well
+as directories named F<new> and F<old>.  The first bundle is named
+F<changes.b>, which if run will populate the F<new> and F<old> directories
+with all of the files that have changed between the two trees.  The second
+bundle, F<revert.b>, will use those files to revert the changes to the
+read-write path so that it matches the read-only path.  The third bundle,
+F<apply.b>, will reapply the changes to the read-write path so that it
+returns to the state that it was in before B<frak> was run.
+
+The intended use of this feature is to make it possible to back out
+arbitrary changes made to the read-write path of a volume, release the
+volume, and then put those changes back.  Please note that this feature is
+not as well-tested as the rest of B<frak>, and the bundles should be
+reviewed very carefully before use.  Note also that B<frak> can be used
+again after F<revert.b> has been applied, to make sure that the read-write
+volume really does match the read-only volume.
+
+This option only really makes sense when used with a path, rather than a
+volume, on the command line.  Otherwise, the bundles will use paths relative
+to the temporary mount points created by B<frak>, which isn't as useful.
+
+=item B<-D>, B<--debug>
+
+Display additional debugging information.  This is mostly only useful for
+debugging B<frak>.
+
+=item B<-d> I<max-diff-lines>, B<--max-diff-lines>=I<max-diff-lines>
+
+Limit the number of lines of diffs shown for changed files to
+I<max-diff-lines>.  The default is 100.  Diffs with longer than that number
+of lines will be replaced with a message saying how many total lines the
+diff had.
+
+=item B<-h>, B<--help>
+
+Print out this documentation (which is done simply by feeding the script to
+C<perldoc -t>).
+
+=item B<-L>, B<--no-log>
+
+Suppress the default logging to a file that occurs if a volume rather than a
+path is specified on the command line.  The output will only be sent to
+standard output.
+
+=item B<-l> I<log>, B<--log-file>=I<log>
+
+Log the B<frak> output to I<log> as well as to standard output.  If a volume
+was specified on the command line, this overrides the default log file name
+(the name of the volume).  If a path was specified, this enables logging to
+a file.
+
+=item B<-m>, B<--munge>
+
+Only meaningful when a path was specified on the command line.  Tells
+B<frak> to show paths in the output relative to the top of the tree
+specified on the command line, rather than showing absolute paths.
+
+=item B<-q>, B<--quiet>
+
+Suppress the normal output to standard output.  B<frak> output will only be
+sent to the log file, if any.
+
+=item B<-s>, B<--suppress-diffs>
+
+Suppress diffs for changed files.  This also turns off the check to see if
+changed files are binary or text, and will make B<frak> run somewhat faster.
+
+=item B<-v>, B<--version>
+
+Print out the version of B<frak> and exit.
+
+=back
+
+=head1 EXAMPLES
+
+Compare the read-write and read-only copies of the volume C<pubsw>, mounting
+both in the current directory to do the comparison, and putting a copy of
+the output into the file F<pubsw> in the current directory:
+
+    frak pubsw
+
+Do the same, but store the output in F</tmp/pubsw.log>:
+
+    frak -l /tmp/pubsw.log pubsw
+
+The same, but don't print anything other than errors to standard output:
+
+    frak -q -l /tmp/pubsw.log pubsw
+
+The same, but only print the output to standard output:
+
+    frak -L pubsw
+
+Compare the path F</afs/.ir.stanford.edu/pubsw> to
+F</afs/ir.stanford.edu/pubsw>, printing the output to standard output.
+
+    frak /afs/.ir.stanford.edu/pubsw
+
+A completely equivalent way to do the same thing:
+
+    frak /afs/.ir.stanford.edu/pubsw /afs/ir.stanford.edu/pubsw
+
+Do the same, but log the output to F</tmp/pubsw.log>:
+
+    frak -l /tmp/pubsw.log /afs/.ir.stanford.edu/pubsw
+
+Compare the read-write and read-only copies of the volume C<pubsw>, writing
+the change bundles into the subdirectory F<changes> of the current
+directory:
+
+    frak -c changes /afs/.ir.stanford.edu/pubsw
+
+One can then cd to the F<changes> directory and run C<changes.b>, and then
+C<revert.b> to revert the changes to the read-write path.  At some point
+later, one could run C<apply.b> to replace the changes.
+
+=head1 SEE ALSO
+
+bundle(1), diff(1)
+
+The current version of this program is available from its web page at
+L<http://www.eyrie.org/~eagle/software/frak/>.
+
+=head1 AUTHOR
+
+Originally written by Neil Crellin <neilc@stanford.edu>.  Substantially
+reorganized and rewritten by Russ Allbery <rra@stanford.edu>.
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 1998, 1999, 2004 Board of Trustees, Leland Stanford Jr.
+University.
+
+This program is free software; you may redistribute it and/or modify it
+under the same terms as Perl itself.
 
 =cut
-
