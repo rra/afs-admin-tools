@@ -33,10 +33,6 @@ if (@ARGV && $ARGV[0] =~ /^-.*h/) {
 die "Usage: volcreate server partition volname quota mtpt [acls]\n" 
     if (@ARGV < 5);
 my ($server, $partition, $volume, $quota, $mtpt, @acls) = @ARGV;
-#
-# Append system:backup rl on ACL list, so the volume can be backedup 
-# by ADSM.
-push @acls, 'system:backup', 'rl';
 
 # Because we're loading the mount point database, we need the mount point
 # specified in the correct fashion.
@@ -50,18 +46,20 @@ $mtpt =~ s%/+$%%;
 if ($server =~ /^\d+$/) { $server = "afssvr$server" }
 die "$server is not an afssvr\n" unless $server =~ /^afssvr\d+$/;
 
+# Append system:backup rl on ACL list to allow ADSM backups.
+push (@acls, 'system:backup', 'rl');
+
 # Create the volume and mount it.  Set ACLs if we were given any, and then
-# chmod the root of the volume to 755 since AFS creates it 777.
+# chmod the root of the volume to 755 since AFS creates it 777.  Use
+# /usr/afsws/bin/fs to avoid the wrapper, which doesn't like us fiddling
+# with the system:backup ACL.
 system ('/usr/pubsw/bin/vos', 'create', $server, $partition, $volume,
         $quota * 1000) == 0 
     or die 'Failed to create volume (status ', ($? >> 8), ")\n";
-system ('/usr/pubsw/bin/fs', 'mkm', $mtpt, $volume) == 0
+system ('/usr/afsws/bin/fs', 'mkm', $mtpt, $volume) == 0
     or die 'Failed to make mount point (status ', ($? >> 8), ")\n";
-if (@acls) {
-    system ('/usr/pubsw/bin/fs', 'setacl', $mtpt, @acls) == 0
-        or warn 'Failed to set acls (status ', ($? >> 8), ")\n";
-}
-
+system ('/usr/afsws/bin/fs', 'setacl', $mtpt, @acls) == 0
+    or warn 'Failed to set acls (status ', ($? >> 8), ")\n";
 chmod (0755, $mtpt) or warn "Failed to chmod root: $!\n";
 system ('/afs/ir/site/leland/afs/scripts/loadmtpt', $mtpt) == 0 
     or warn 'Failed to load mountpoint (status ', ($? >> 8), ")\n"; 
