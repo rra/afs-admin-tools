@@ -1,9 +1,14 @@
 #!/usr/bin/perl
+$ID = $Id$;
+#
+# lsmounts -- List volumes which have mountpoints in directory.
 
 use Cwd;
 
-opendir(DIR,cwd()) or die "Can't open cwd: $!\n";
+my $directory = $ARGV[0] || cwd;
+opendir(DIR,$directory) or die "Can't open $directory: $!\n";
 while (defined($_ = readdir(DIR))) {
+    $_ = "$directory/$_";
     lstat($_);
     if (-d _) {
         $mtpt = `/usr/pubsw/bin/fs lsmount $_ 2>&1`;
