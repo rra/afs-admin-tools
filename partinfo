@@ -13,27 +13,36 @@ $ID = q$Id$;
 # added to that partition before putting it over 80% full.
 
 # Make sure our arguments make sense.
+my $fullpath = $0;
 $0 =~ s%.*/%%;
 my $color;
-if ($ARGV[0] eq '-c') {
-    shift;
-    $color = 1;
-    require Term::ANSIColor;
+while ($ARGV[0] =~ /^-/) {
+    $_ = shift;
+    if (/h/) {
+        print "Feeding myself to perldoc, please wait....\n";
+        exec ('perldoc', '-t', $fullpath);
+    }
+    if (/v/) {
+        my $version = join (' ', (split (' ', $ID))[1,2]);
+        $version =~ s/,v\b//;
+        die $version, "\n";
+    }
+    if (/c/) { $color = 1; require Term::ANSIColor }
+    if (/q/) { $^ = 'EMPTY' }
 }
 die "Usage: $0 <afssvr>\n" if (@ARGV != 1);
 die "$ARGV[0] is not an AFS server\n" unless ($ARGV[0] =~ /^afssvr[1-9]/);
 
 # We can't use formats if we're using color because format mangles color
 # output.  *sigh*
-if ($color) {
-    printf ("%18s: %10s %10s %10s %8s %10s\n", 'Partition', 'Total', 'Used',
+if ($color && $^ ne 'EMPTY') {
+    printf ("%17s: %10s %10s %10s %8s %10s\n", 'Partition', 'Total', 'Used',
             'Free', '%Full', 'Available');
 }
 
 # Run vos partinfo and parse the output.  If we're doing color, we have to
 # use printf instead of formats.
 my ($partition, $used, $total, $free, $usable, $pfree);
-undef $-;
 open (PARTINFO, "vos partinfo $ARGV[0] |") or die "$0: can't fork: $!\n";
 while (<PARTINFO>) {
     if (m%^Free space on partition (/vicep\S+): (\d+) K .* total (\d+)$%) {
@@ -46,7 +55,7 @@ while (<PARTINFO>) {
             my $c;
             if    ($pfree < 60) { $c = Term::ANSIColor::color ('green')  }
             elsif ($pfree > 80) { $c = Term::ANSIColor::color ('red')    }
-            printf ("%18s: %10d %10d %10d %s%7.2f%%%s %10d\n", $partition,
+            printf ("%17s: %10d %10d %10d %s%7.2f%%%s %10d\n", $partition,
                     $total, $used, $free, $c, $pfree,
                     Term::ANSIColor::color ('reset'), $usable);
         } else {
@@ -67,3 +76,91 @@ format STDOUT =
 @>>>>>>>>>>>>>>>>: @>>>>>>>>> @>>>>>>>>> @>>>>>>>>> @###.##% @>>>>>>>>>
 $partition,        $total,    $used,     $free,     $pfree,  $usable
 .
+
+format EMPTY =
+.
+__END__
+
+############################################################################
+# Documentation
+############################################################################
+
+=head1 NAME
+
+partinfo - Show summary of space on AFS server partitions
+
+=head1 SYNOPSIS
+
+partinfo [B<-hvcq>] I<afssvr>
+
+=head1 DESCRIPTION
+
+B<partinfo> does a vos partinfo on a particular AFS server to determine the
+amount of used and free space.  Unlike vos partinfo, however, it also
+formats the output into a more easily readable tabular form, displays the
+total disk space, the used disk space, and the free disk space, calculates
+what percent full the partition is, and displays the amount that can still
+be put on the partition before it goes over 80% full.
+
+Normally, B<partinfo> displays a header above the output giving the meaning
+of the columns, but this can optionally be suppressed.  B<partinfo> can also
+optionally use color to highlight partitions with plenty of free space and
+partitions that are too full.
+
+B<partinfo> just calls vos partinfo under the hood, and therefore requires
+that vos be on the user's path.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-h>, B<--help>
+
+Print out this documentation (which is done simply by feeding the script to
+C<perldoc -t>).
+
+=item B<-v>, B<--version>
+
+Print out the version of B<partinfo> and exit.
+
+=item B<-c>, B<--color>
+
+Use color to highlight interesting data.  Currently this just means that the
+percent full column will be shown in green for partitions under 60% full and
+in red for partitions over 80% full.  Using this option requires that the
+Term::ANSIColor module be installed and available on the user's system (this
+module is not required if B<-c> is not used).
+
+=item B<-q>, B<--quiet>
+
+Suppress the header normally printed to explain the meanings of each column
+of data.
+
+=back
+
+=head1 EXAMPLES
+
+The following command shows the current status of afssvr1:
+
+        partinfo afssvr1
+
+This command shows the same data, but without the header and with color
+highlighting of interesting percent full data:
+
+        partinfo -qc afssvr1
+
+This command does the same for afssvr5:
+
+        partinfo --color --quiet afssvr5
+
+=head1 SEE ALSO
+
+L<vos(1)>, L<vos_partinfo(1)>
+
+=head1 AUTHORS
+
+Original Perl script written by Neil Crellin E<lt>neilc@stanford.eduE<gt>,
+modified by Russ Allbery E<lt>rra@stanford.eduE<gt> to use formats, to
+include an explanatory header, and to use color if wanted.
+
+=cut
