@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 $ID = q$Id$;
 #
-# afs-manage-logs -- Create and grant quota to log volumes in AFS.
+# volcreate-logs -- Create and grant quota to log volumes in AFS.
 #
 # Written by Russ Allbery <rra@stanford.edu>
 # Copyright 2002, 2004 Board of Trustees, Leland Stanford Jr. University
@@ -224,6 +224,33 @@ sub create_month_dirs {
     }
 }
 
+# Given a year, month, and configuration hash for a log volume, make sure that
+# a volume for that year and month already exists.  If it doesn't, create it.
+sub create_log_volume {
+    my ($year, $month, $config) = @_;
+    my ($path, $volume);
+    if ($$config{type} eq 'monthly') {
+        $path = sprintf ("$$config{path}/%04d/%02d", $year, $month);
+        $volume = sprintf ("%s.%04d%02d", $$config{name}, $year, $month);
+        if (!-d "$$config{path}/$year") {
+            if ($JUSTPRINT) {
+                print "mkdir $$config{path}/$year\n";
+            } elsif (!mkdir ("$$config{path}/$year", 0755)) {
+                warn "Could not create $$config{path}/$year: $!\n";
+                warn "$volume not created\n";
+                return;
+            }
+        }
+    } elsif ($$config{type} eq 'yearly') {
+        $path = sprintf ("$$config{path}/%04d", $year);
+        $volume = sprintf ("%s.%04d", $$config{name}, $year);
+    }
+    if (!-d $path) {
+        create_volume ($volume, $path, $$config{quota});
+        create_month_dirs ($path) if $$config{type} eq 'yearly';
+    }
+}
+
 ##############################################################################
 # Configuration parsing
 ##############################################################################
@@ -312,6 +339,20 @@ my ($day, $month, $year) = (localtime)[3..5];
 $month++;
 $year += 1900;
 
+# If a particular name or set of names were given on the command line, limit
+# our actions to just those names.
+if (@ARGV) {
+    my %names = map { $_ => 1 } @ARGV;
+    @config = grep { $names{$$_{name}} } @config;
+    unless (@ARGV == @config) {
+        my %found = map { $$_{name} => 1 } @config;
+        for (sort keys %names) {
+            warn "No configuration found for $_" unless $found{$_};
+        }
+        exit 1;
+    }
+}
+
 # For each log configuration, update the quota of the current volume if
 # necessary and then create the new volume if it's past the 20th of the month.
 for my $config (@config) {
@@ -324,11 +365,11 @@ for my $config (@config) {
         warn "Unknown type $$config{type} for $$config{name}\n";
         next;
     }
-    unless ($path) {
-        warn "Could not find current volume for $$config{name}\n";
-        next;
+    if ($path) {
+        check_quota ($volume, $path, $$config{quota});
+    } else {
+        create_log_volume ($year, $month, $config);
     }
-    check_quota ($volume, $path, $$config{quota});
     if ($day >= 20) {
         my $month = $month;
         my $year = $year;
@@ -337,27 +378,7 @@ for my $config (@config) {
             $month = 1;
             $year++;
         }
-        my ($path, $volume);
-        if ($$config{type} eq 'monthly') {
-            $path = sprintf ("$$config{path}/%04d/%02d", $year, $month);
-            $volume = sprintf ("%s.%04d%02d", $$config{name}, $year, $month);
-            if (!-d "$$config{path}/$year") {
-                if ($JUSTPRINT) {
-                    print "mkdir $$config{path}/$year\n";
-                } elsif (!mkdir ("$$config{path}/$year", 0755)) {
-                    warn "Could not create $$config{path}/$year: $!\n";
-                    warn "$volume not created\n";
-                    next;
-                }
-            }
-        } elsif ($$config{type} eq 'yearly') {
-            $path = sprintf ("$$config{path}/%04d", $year);
-            $volume = sprintf ("%s.%04d", $$config{name}, $year);
-        }
-        if (!-d $path) {
-            create_volume ($volume, $path, $$config{quota});
-            create_month_dirs ($path) if $$config{type} eq 'yearly';
-        }
+        create_log_volume ($year, $month, $config);
     }
 }
 
@@ -369,11 +390,11 @@ __END__
 
 =head1 NAME
 
-afs-manage-logs - Manage AFS log volumes.
+volcreate-logs - Create and grant quota to log volumes in AFS
 
 =head1 SYNOPSIS
 
-B<afs-manage-logs> [B<-hmnv>]
+B<volcreate-logs> [B<-hmnv>]
 
 =head1 DESCRIPTION
 
@@ -389,7 +410,7 @@ It uses B<volcreate> to create all new log volumes, and therefore initial
 ACLs for new log volumes can be set using B<volcreate>'s ACL handling
 capabilities.  See L<volcreate(1)> for more information.
 
-In order to use B<afs-manage-logs> to manage a set of volumes, the volumes
+In order to use B<volcreate-logs> to manage a set of volumes, the volumes
 must use standard directory structure and naming conventions.  This means
 that under some root log directory, volumes must be organized like:
 
@@ -433,7 +454,7 @@ standard out each command that would be executed.
 
 =item B<-v>, B<--version>
 
-Print out the version of B<afs-manage-logs> and exit.
+Print out the version of B<volcreate-logs> and exit.
 
 =back
 
@@ -441,16 +462,21 @@ Print out the version of B<afs-manage-logs> and exit.
 
 Process all of the current rules, reporting actions to standard out.
 
-    afs-manage-logs
+    volcreate-logs
 
 Do the same, but instead send the report via e-mail.
 
-    afs-manage-logs -m
+    volcreate-logs -m
 
 Check to see what needs to be done, but don't actually do it.  Instead, just
 print the commands that would be executed to standard out:
 
-    afs-manage-logs -n
+    volcreate-logs -n
+
+Only check and reset quota or create new log volumes for the config file
+entries with a name value of C<logs.cgi> or C<logs.www>:
+
+    volcreate-logs logs.cgi logs.www
 
 =head1 FILES
 
@@ -477,7 +503,7 @@ year of logs, and <quota> is the starting quota for each volume in MB.
 
 =item F</afs/ir/service/afs/scripts/volcreate>
 
-Used to create volumes.  B<afs-manage-logs> assumes that B<volcreate> has
+Used to create volumes.  B<volcreate-logs> assumes that B<volcreate> has
 been configured to set the appropriate initial ACLs for the volumes.
 
 =back
