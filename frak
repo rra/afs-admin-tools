@@ -74,8 +74,7 @@ use vars qw($argc $maxdifflines $rw $ro $startrw $startro
             $testmtpt
            );
 
-$fs = '/usr/pubsw/bin/fs';
-# $fs = '/afs/ir/systems/@sys/usr/afs34a5.55/bin/fs';
+($fs) = grep { -x $_ } qw(/usr/bin/fs /usr/afsws/bin/fs /usr/pubsw/bin/fs);
 
 use vars qw($opt_suppressdiffs $opt_maxdifflines $opt_leave2ndRW
             $opt_changedir $opt_crossmountpoints %options);
