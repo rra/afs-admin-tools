@@ -61,6 +61,18 @@ sub system {
 sub find_targets {
     my @locations = @_;
     my @results;
+
+    # Special-case the fully-qualifed case where the user gave the exact
+    # server and partition.
+    if (@locations == 2 && $locations[1] =~ /^[a-z]$/) {
+        my ($server, $partition) = @locations;
+        $server = 'afssvr' . $server if ($server =~ /^\d+$/);
+        $partition =~ s%^(?:/?vicep)?%/vicep%;
+        return ($server, $partition);
+    }
+
+    # The normal case, where we need to go looking at current server usage to
+    # gather the necessary information.
     while (@locations) {
         my $server = shift @locations;
         my $part = shift @locations;
