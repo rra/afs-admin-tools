@@ -54,7 +54,10 @@ sub system {
 
 # Given a mount point, get the volume name of the volume mounted there.
 sub mount_to_name {
-    my $path = shift;
+    my ($path) = @_;
+    if ($path =~ /[\\\']/) {
+        die "$0: invalid character in $path\n";
+    }
     my $volume = `$FS lsmount '$path'`;
     die "$0: cannot determine volume from mount point $path\n"
         unless ($volume =~ /^\S+ is a mount point for volume \'\#(\S+)\'$/);
