@@ -400,6 +400,14 @@ sub move_single {
         die "$0: $volume not on @source\n";
     }
 
+    # Refuse to release a volume with unreleased changes unless --force was
+    # given on the command line.  Note that there is a race condition here, so
+    # this check is not completely reliable (someone may have changed the
+    # volume since after we ran vos examine).
+    $needrelease &&= ($volinfo{sites} > 0);
+    die "$0: volume has unreleased changes, use --force to force a release\n"
+        if ($volinfo{unreleased} && $needrelease && !$force);
+
     # If we need a release, add that and also the removal of the old site.
     if ($needrelease) {
         push (@commands, release ($volume));
