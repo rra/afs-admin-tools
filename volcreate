@@ -27,10 +27,15 @@ $SERVERS = '/afs/ir/service/afs/data/serverlist.types';
 # for its format.
 $ACLS = '/afs/ir/service/afs/data/acl-rules';
 
+# The full path to fs and vos.  Allow for Linux where the preferred location
+# may be on local disk.
+($FS)  = grep { -x $_ } qw(/usr/bin/fs /usr/afsws/bin/fs /usr/pubsw/bin/fs);
+($VOS) = grep { -x $_ } qw(/usr/bin/vos /usr/pubsw/bin/vos);
+
 require 5.001;
 
 use strict;
-use vars qw($ACLS $ID $JUSTPRINT $SERVERS);
+use vars qw($ACLS $FS $ID $JUSTPRINT $SERVERS $VOS);
 use subs qw(system);
 
 use Getopt::Long qw(GetOptions);
@@ -79,7 +84,7 @@ sub find_targets {
 
         $server = 'afssvr' . $server if ($server =~ /^\d+$/);
         $part = 'a-z' if $part eq '.';
-        open (INFO, "/usr/pubsw/bin/vos partinfo $server |") or die "$0: can't fork: $!\n";
+        open (INFO, "$VOS partinfo $server |") or die "$0: can't fork: $!\n";
         my @free;
         local $_;
         while (<INFO>) {
@@ -210,8 +215,7 @@ sub find_best_replicated {
 # on a failure to create the volume.
 sub volume_create {
     my ($server, $partition, $volume, $quota) = @_;
-    system ('/usr/pubsw/bin/vos', 'create', $server, $partition, $volume,
-            $quota * 1000) == 0
+    system ($VOS, 'create', $server, $partition, $volume, $quota * 1000) == 0
         or die 'Failed to create volume (status ', ($? >> 8), ")\n";
 }
 
@@ -220,7 +224,7 @@ sub volume_create {
 # AFS creates it 777.  Use /usr/afsws/bin/fs to avoid the wrapper.
 sub volume_mount {
     my ($volume, $mtpt) = @_;
-    system ('/usr/afsws/bin/fs', 'mkm', $mtpt, $volume) == 0
+    system ($FS, 'mkm', $mtpt, $volume) == 0
         or die 'Failed to make mount point (status ', ($? >> 8), ")\n";
     if ($JUSTPRINT) {
         print "chmod 755 $mtpt\n";
@@ -265,7 +269,7 @@ sub volume_setacls {
     push (@acls, @extra);
 
     # Actually set the ACLs.
-    system ('/usr/afsws/bin/fs', 'setacl', $mtpt, @acls) == 0
+    system ($FS, 'setacl', $mtpt, @acls) == 0
         or warn 'Failed to set acls (status ', ($? >> 8), ")\n";
 }
 
@@ -277,12 +281,11 @@ sub volume_replicate {
     my ($volume, @locations) = @_;
     while (@locations) {
         my ($server, $partition) = @{ shift @locations };
-        system ('/usr/pubsw/bin/vos', 'addsite', $server, $partition,
-                $volume) == 0
+        system ($VOS, 'addsite', $server, $partition, $volume) == 0
             or die "Failed to replicate volume to $server $partition",
                 ' (status ', ($? >> 8), ")\n";
     }
-    system ('/usr/pubsw/bin/vos', 'release', '-f', $volume) == 0
+    system ($VOS, 'release', '-f', $volume) == 0
         or die 'Failed to release volume (status ', ($? >> 8), ")\n";
 }
 
