@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 $ID = q$Id$;
 #
-# mvto -- Move an AFS volume from anywhere.
+# mvto -- Move an AFS volume from anywhere, intelligently.
 #
 # Written by Russ Allbery <rra@stanford.edu>
 # Based on code by Neil Crellin <neilc@stanford.edu>
@@ -62,6 +62,7 @@ sub system {
 sub findpartition {
     my ($server, $part) = @_;
     $server = 'afssvr' . $server if ($server =~ /^\d+$/);
+    $part =~ s%^/?vicep%%;
     if ($part eq '.' || (length ($part) > 1 && $part =~ /^[a-z-]+$/)) {
         $part = 'a-z' if $part eq '.';
         open (INFO, "$VOS partinfo $server |") or die "$0: can't fork: $!\n";
@@ -79,7 +80,7 @@ sub findpartition {
         @free = sort { $$b[1] <=> $$a[1] } @free;
         $part = $free[0][0];
     } else {
-        $part =~ s%^(?:/?vicep)?%/vicep%;
+        $part = "/vicep$part";
     }
     die "$0: invalid partition $part\n" if ($part !~ m%^/vicep[a-z]$%);
     return ($server, $part);
@@ -272,8 +273,7 @@ sub move_ros {
 
 # Given a volume name, a flag saying whether to force releases, and then a
 # list of server and partition pairs onto which to put it, take the necessary
-# actions to move the volume.  Returns true if the move was successful.
-# Otherwise, it prints a warning and returns false.
+# actions to move the volume.
 sub move_volume {
     my ($volume, $force, @location) = @_;
     my @rw = splice (@location, 0, 2);
@@ -324,6 +324,56 @@ sub move_volume {
     }
 }
 
+# Given the name of the volume, a flag saying whether to force a release, a
+# server and and partition pair for the source, and a server and partition
+# pair for the destination, move a single site of a volume.
+sub move_single {
+    my ($volume, $force, @location) = @_;
+    my @source = findpartition (splice (@location, 0, 2));
+    my @dest = findpartition (@location);
+
+    # Get and display information about the volume.
+    my %volinfo = volinfo ($volume);
+    print_volinfo ($volume, \%volinfo);
+
+    # Build commands to move the appropriate portion of the volume.
+    my ($needrelease, @commands);
+    if ($source[0] eq $volinfo{rwserver} && $source[1] eq $volinfo{rwpart}) {
+        push (@commands, move ($volume, @source, @dest));
+        push (@commands, backup ($volume));
+        if ($volinfo{sites} > 0) {
+            if ($volinfo{ro}{$source[0]} ne $volinfo{rwpart}) {
+                my $ro = "$volume.readonly";
+                my $part = $volinfo{ro}{$source[0]};
+                push (@commands, remove ($source[0], $part, $ro));
+            }
+            push (@commands, addsite (@dest, $volume));
+            $needrelease++;
+        }
+    } elsif ($volinfo{sites} > 0 && $source[1] eq $volinfo{ro}{$source[0]}) {
+        if ($volinfo{ro}{$dest[0]}) {
+            die "$0: $volume already has a replica on on $dest[0]\n";
+        }
+        push (@commands, addsite (@dest, $volume));
+        $needrelease++;
+    } else {
+        die "$0: $volume not on @source\n";
+    }
+
+    # If we need a release, add that and also the removal of the old site.
+    if ($needrelease) {
+        push (@commands, release ($volume));
+        push (@commands, remove (@source, "$volume.readonly"))
+            if ($source[1] eq $volinfo{ro}{$source[0]});
+    }
+
+    # Run the commands.
+    for (@commands) {
+        print "@$_\n";
+        system @$_;
+    }
+}
+
 ##############################################################################
 # Implementation
 ##############################################################################
@@ -339,12 +389,13 @@ $0 =~ s%.*/%%;
 $| = 1;
 
 # Parse our options.
-my ($help, $force, $list,$version);
+my ($help, $force, $list, $single, $version);
 Getopt::Long::config ('bundling', 'no_ignore_case');
 GetOptions ('help|h'               => \$help,
             'force|f'              => \$force,
             'list|l=s'             => \$list,
             'dry-run|just-print|n' => \$JUSTPRINT,
+            'single|s'             => \$single,
             'version|v'            => \$version) or exit 1;
 if ($help) {
     print "Feeding myself to perldoc, please wait....\n";
@@ -367,6 +418,15 @@ unless ($list) {
 }
 usage if (@ARGV % 2 != 0);
 
+# If -s was given, there must be exactly four arguments left, a pair giving
+# the current server and partition, and a pair saying where that replica of
+# the volume should be moved to.  Make sure they don't specify the same
+# server.
+die "Usage: $0 -s (-l <list> | <volume>) <server> <part> <server> <part>\n"
+    if ($single && @ARGV != 4);
+die "$0: cannot move a specific site between partitions on the same server\n"
+    if ($single && $ARGV[0] eq $ARGV[2]);
+
 # Do the work.  If -l was given, this means looping on the volumes listed in
 # that file; otherwise, just move the single volume.
 if ($list) {
@@ -379,13 +439,21 @@ if ($list) {
     for (@volumes) {
         $i++;
         print "MOVING $_ ($i of $total)\n\n";
-        move_volume ($_, $force, @ARGV);
+        if ($single) {
+            move_single ($_, $force, @ARGV);
+        } else {
+            move_volume ($_, $force, @ARGV);
+        }
         print "\n";
         print "\n" unless ($i == $total);
     }
     print "FINISHED $list\n";
 } else {
-    move_volume ($volume, $force, @ARGV);
+    if ($single) {
+        move_single ($volume, $force, @ARGV);
+    } else {
+        move_volume ($volume, $force, @ARGV);
+    }
 }
 
 __END__
@@ -396,13 +464,13 @@ __END__
 
 =head1 NAME
 
-mvto - Move an AFS volume from anywhere
+mvto - Move an AFS volume from anywhere, intelligently
 
 =head1 SYNOPSIS
 
-mvto [B<-hfnv>] I<volume> I<server> I<partition> [I<server> I<partition> ...]
+mvto [B<-hfnsv>] I<volume> I<server> I<partition> [I<server> I<partition> ...]
 
-mvto [B<-hfnv>] [B<-l> I<list> I<server> I<partition>
+mvto [B<-hfnsv>] [B<-l> I<list> I<server> I<partition>
 [I<server> I<partition> ...]
 
 =head1 DESCRIPTION
@@ -494,6 +562,25 @@ information given on the command line.
 Print out volume status information and the commands that B<mvto> would run,
 but don't execute any of them.
 
+=item B<-s>, B<--single>
+
+Rather than being a complete specification of the location at which the
+volume should be put, the command-line arguments are taken to be two
+server/partition pairs.  The first is the current location of a site of the
+volume (either a replica or the read/write with its replica), and the second
+pair is the location to move that site to.
+
+This allows B<mvto> to be used to evacuate a single replication site server
+without having to know where the other sites for each of those volumes are
+located, while still taking advantage of B<mvto>'s understanding of B<vos
+release>, creation of backup volumes, keeping a replica with the read/write
+volume, and so forth.
+
+It generally doesn't make any sense to use this option with unreplicated
+volumes.  For those, there's no reason not to use the regular syntax.
+What's special about this option is that it leaves all other sites of a
+volume alone.
+
 =item B<-v>, B<--version>
 
 Print out the version of B<mvto> and exit.
@@ -524,6 +611,15 @@ for each individual volume move, so the volumes will be spread out across
 the server.
 
     mvto -l evacuate afssvr9 .
+
+For the volume pubsw, move only the site (whether a replica or a read/write
+with replica) on afssvr10 a to the most empty partition on afssvr11:
+
+    mvto -s pubsw afssvr10 /vicepa 11 .
+
+Do the same for every volume listed in the file F<evacuate>:
+
+    mvto -l evacuate -s 10 vicepa 11 .
 
 =head1 SEE ALSO
 
