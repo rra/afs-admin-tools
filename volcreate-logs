@@ -11,7 +11,7 @@ $ID = q$Id$;
 ##############################################################################
 
 # The address to which to send mailed reports.
-$ADDRESS = 'afs-reports@stanford.edu';
+$ADDRESS = 'afs-reports@lists.stanford.edu';
 
 # The path to the config file specifying what to do.
 $CONFIG = '/afs/ir/service/afs/data/log-volumes';
@@ -406,7 +406,7 @@ C<perldoc -t>).
 =item B<-m>, B<--mail>
 
 Report via e-mail rather than to standard out.  Sends an e-mail report to
-afs-reports@stanford.edu (configured at the top of this program).
+afs-reports@lists.stanford.edu (configured at the top of this program).
 
 =item B<-n>, B<--dry-run>, B<--just-print>
 
