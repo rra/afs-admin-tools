@@ -81,7 +81,11 @@ $topart = '/vicep' . $topart unless ($topart =~ m%^/vicep%);
 die "$0: invalid partition $topart\n" if ($topart !~ m%^/vicep[a-z]$%);
 if ($rwserver eq $toserver) {
     print "$volume is already on $rwserver $rwpart\n";
-    delete $ro{$toserver};
+    if ($ro{$rwserver}) {
+        delete $ro{$rwserver};
+    } elsif ($sites) {
+        push (@commands, [ qw(vos addsite), $rwserver, $rwpart, $volume ]);
+    }
 } else {
     push (@commands, [ qw(vos move -v), $volume, $rwserver, $rwpart,
                        $toserver, $topart ]);
