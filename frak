@@ -59,6 +59,7 @@ use vars qw($opt_suppressdiffs $opt_maxdifflines $opt_leave2ndRW);
 &GetOptions("suppressdiffs!","maxdifflines=i","leave2ndRW!");
 
 if ($opt_maxdifflines) { $options{'MaxDiffLines'} = $opt_maxdifflines; }
+$maxdifflines = $options{'MaxDiffLines'};
 
 $argc = @ARGV;
 die "Too many arguments: frak {options} rw [ro]\n" if ($argc > 2);
@@ -71,13 +72,12 @@ if ( $argc == 1 && length($rw) >= 7 && substr($rw,0,7) eq '/afs/ir' ) {
 
 $ro = ( $argc == 2 ? $ARGV[1] : $rw ) ;
 $rw =~ s:^/afs/\.ir(\.stanford\.edu)?/:/afs/.ir.stanford.edu/: ;
+
 if ( $opt_leave2ndRW ) {
     $ro =~ s:^/afs/(\.)?ir(\.stanford\.edu)?/:/afs/.ir.stanford.edu/: ;
 } else {
     $ro =~ s:^/afs/(\.)?ir(\.stanford\.edu)?/:/afs/ir.stanford.edu/: ;
 }
-
-$maxdifflines = $options{'MaxDiffLines'};
 
 $startrw = $rw;
 $startro = $ro;
