@@ -3,6 +3,53 @@
 require 5.003; # I prototype a sub below.
 
 use File::Find;
+use Date::Format;
+
+# Mode masks from /usr/include/sys/stat.h
+
+use vars qw($S_IFMT $S_IAMB $S_IFIFO $S_IFCHR $S_IFDIR $S_IFNAM
+            $S_INSEM $S_INSHD $S_IFBLK $S_IFREG $S_IFLNK $S_IFSOCK
+            $S_IFDOOR $S_ISUID $S_ISGID $S_ISVTX $S_IREAD $S_IWRITE
+            $S_IEXEC $S_ENFMT $S_IRWXU $S_IRUSR $S_IWUSR $S_IXUSR
+            $S_IRWXG $S_IRGRP $S_IWGRP $S_IXGRP $S_IRWXO $S_IROTH
+            $S_IWOTH $S_IXOTH);
+
+$S_IFMT     =     0xF000  ; #  type of file 
+$S_IAMB     =     0x1FF   ; #  access mode bits 
+$S_IFIFO    =     0x1000  ; #  fifo 
+$S_IFCHR    =     0x2000  ; #  character special 
+$S_IFDIR    =     0x4000  ; #  directory 
+$S_IFNAM    =     0x5000  ; #  XENIX special named file 
+$S_INSEM    =     0x1     ; #  XENIX semaphore subtype of IFNAM 
+$S_INSHD    =     0x2     ; #  XENIX shared data subtype of IFNAM 
+$S_IFBLK    =     0x6000  ; #  block special 
+$S_IFREG    =     0x8000  ; #  regular 
+$S_IFLNK    =     0xA000  ; #  symbolic link 
+$S_IFSOCK   =     0xC000  ; #  socket 
+$S_IFDOOR   =     0xD000  ; #  door 
+$S_ISUID    =     0x800   ; #  set user id on execution 
+$S_ISGID    =     0x400   ; #  set group id on execution 
+$S_ISVTX    =     0x200   ; #  save swapped text even after use 
+$S_IREAD    =     00400   ; #  read permission, owner 
+$S_IWRITE   =     00200   ; #  write permission, owner 
+$S_IEXEC    =     00100   ; #  execute/search permission, owner 
+$S_ENFMT    =     $S_ISGID; #  record locking enforcement flag 
+         
+#  the following macros are for POSIX conformance 
+         
+$S_IRWXU = 00700;           #  read, write, execute: owner 
+$S_IRUSR = 00400;           #  read permission: owner 
+$S_IWUSR = 00200;           #  write permission: owner 
+$S_IXUSR = 00100;           #  execute permission: owner 
+$S_IRWXG = 00070;           #  read, write, execute: group 
+$S_IRGRP = 00040;           #  read permission: group 
+$S_IWGRP = 00020;           #  write permission: group 
+$S_IXGRP = 00010;           #  execute permission: group 
+$S_IRWXO = 00007;           #  read, write, execute: other 
+$S_IROTH = 00004;           #  read permission: other 
+$S_IWOTH = 00002;           #  write permission: other 
+$S_IXOTH = 00001;           #  execute permission: other 
+
 
 $maxdifflines = 200;
 
@@ -46,6 +93,57 @@ sub getacl ($) {
     close(LISTACL);
     $acl =~ s/,$//;
     return $acl;
+}
+
+sub modestr ($) {
+    my ($mode) = @_;
+    my $outstr = "?---------";
+
+    if (($mode & $S_IFMT) == $S_IFDIR) { substr($outstr,0,1) = "d"; }
+    elsif (($mode & $S_IFMT) == $S_IFLNK) { substr($outstr,0,1) = "l"; }
+    elsif (($mode & $S_IFMT) == $S_IFBLK) { substr($outstr,0,1) = "b"; }
+    elsif (($mode & $S_IFMT) == $S_IFCHR) { substr($outstr,0,1) = "c"; }
+    elsif (($mode & $S_IFMT) == $S_IFNAM) { substr($outstr,0,1) = "p"; }
+    elsif (($mode & $S_IFMT) == $S_IFREG) { substr($outstr,0,1) = "-"; }
+    elsif (($mode & $S_IFMT) == $S_IFIFO) { substr($outstr,0,1) = "|"; }
+
+    if (($mode & $S_IAMB) & $S_IRUSR) { substr($outstr,1,1) = "r" }
+    if (($mode & $S_IAMB) & $S_IWUSR) { substr($outstr,2,1) = "w" }
+    if (($mode & $S_IAMB) & $S_IXUSR) { substr($outstr,3,1) = "x" }
+    if (($mode & $S_IAMB) & $S_IRGRP) { substr($outstr,4,1) = "r" }
+    if (($mode & $S_IAMB) & $S_IWGRP) { substr($outstr,5,1) = "w" }
+    if (($mode & $S_IAMB) & $S_IXGRP) { substr($outstr,6,1) = "x" }
+    if (($mode & $S_IAMB) & $S_IROTH) { substr($outstr,7,1) = "r" }
+    if (($mode & $S_IAMB) & $S_IWOTH) { substr($outstr,8,1) = "w" }
+    if (($mode & $S_IAMB) & $S_IXOTH) { substr($outstr,9,1) = "x" }
+    
+    if (($mode & $S_IAMB) & $S_ISUID) {
+        if (($mode & $S_IAMB) & $S_IXUSR) { substr($outstr,3,1) = "s" }
+        else { substr($outstr,3,1) = "S" }
+    }
+    if (($mode & $S_IAMB) & $S_ISGID) {
+        if (($mode & $S_IAMB) & $S_IXGRP) { substr($outstr,6,1) = "s" }
+        else { substr($outstr,6,1) = "S" }
+    }
+    if (($mode & $S_IAMB) & $S_ISVTX) {
+        if (($mode & $S_IAMB) & $S_IXOTH) { substr($outstr,9,1) = "t" }
+        else { substr($outstr,3,1) = "T" }
+    }
+
+    return $outstr;
+}
+
+sub lslout ($$$$$$$) {
+    my ($mode, $link, $uid, $gid, $size, $mtime, $nodate) = @_;
+    my $output;
+    my $modestr = modestr($mode);
+    my $username = getpwuid($uid) || $uid;
+    my $grname = getgrgid($gid) || $gid;
+    my $lastchanged = ctime($mtime);
+    chomp($lastchanged);
+    $output = "$modestr   $link   $username   $grname   $size";
+    $output .= "   $lastchanged" unless $nodate;
+    return $output;
 }
 
 sub wantedrw {
@@ -95,15 +193,16 @@ sub wantedrw {
                 if ( $rw ne $startrw ) { $File::Find::prune = 1; return; }
             } else {            # Directory but not mountpoint
                 print "New directory: $rwtrim\n";
-                $rwlsout = `/bin/ls -ld \Q$rw\E`;
-                $rwlsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*\s+$/$1/;
+                $rwlsout = lslout($rwmode,$rwlink,$rwuid,$rwgid,
+                                  $rwsize,$rwmtime,0);
+
                 print "  $rwlsout\n";
                 print "  ACL is: $rwacl\n";
             }
         } else {                # New, but not a link, dir, or mountpoint
             print "New: $rwtrim\n";
-            $rwlsout = `/bin/ls -ld \Q$rw\E`;
-            $rwlsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*\s+$/$1/;
+            $rwlsout = lslout($rwmode,$rwlink,$rwuid,$rwgid,
+                              $rwsize,$rwmtime,0);
             print "  $rwlsout\n";
         }
     } elsif ( $rwislink ) {
@@ -119,15 +218,15 @@ sub wantedrw {
                 print "  NOW: $rwlink\n";
             } else { 
                 print "Directory replaced by link: $rwtrim\n";
-                $rolsout = `/bin/ls -ld \Q$ro\E`;
-                $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*\s+$/$1/;
+                $rolsout = lslout($romode,$rolink,$rouid,$rogid,
+                                  $rosize,$romtime,0);
                 print "  WAS: $rolsout\n";
                 print "  NOW: $rwlink\n";
             }
         } else {                # Replaces link, not link, dir, or mountpoint
             print "Non-link replaced by link: $rwtrim\n";
-            $rolsout = `/bin/ls -ld \Q$ro\E`;
-            $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*\s+$/$1/;
+            $rolsout = lslout($romode,$rolink,$rouid,$rogid,
+                              $rosize,$romtime,0);
             print "  WAS: $rolsout\n";
             print "  NOW: $rwlink\n";
         } 
@@ -153,23 +252,23 @@ sub wantedrw {
                     if ( $rw ne $startrw ) { $File::Find::prune = 1; return; }
                 } else {        # RW is mtpt, RO is regular dir
                     print "Directory replaced by mountpoint: $rwtrim\n";
-                    $rolsout = `/bin/ls -ld \Q$ro\E`;
-                    $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*\s+$/$1/;
+                    $rolsout = lslout($romode,$rolink,$rouid,$rogid,
+                                      $rosize,$romtime,0);
                     print "  WAS: $rolsout\n";
                     print "  NOW: -> \#$rwmtpt\n";
                     if ( $rw ne $startrw ) { $File::Find::prune = 1; return; }
                 }
             } else {            # RW is mtpt, RO neither link, dir or mtpt
                 print "File replaced by mountpoint: $rwtrim\n";
-                $rolsout = `/bin/ls -ld \Q$ro\E`;
-                $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*\s+$/$1/;
+                $rolsout = lslout($romode,$rolink,$rouid,$rogid,
+                                  $rosize,$romtime,0);
                 print "  WAS: $rolsout\n";
                 print "  NOW: -> \#$rwmtpt\n";
                 if ( $rw ne $startrw ) { $File::Find::prune = 1; return; }
             }
         } else {                # RW is Regular directory, not mountpoint
-            $rwlsout = `/bin/ls -ld \Q$rw\E`;
-            $rwlsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*\s+$/$1/;
+            $rwlsout = lslout($rwmode,$rwlink,$rwuid,$rwgid,
+                              $rwsize,$rwmtime,0);
             if ( $roislink ) {
                 print "Link replaced by directory: $rwtrim\n";
                 print "  WAS: $rolink\n";
@@ -180,8 +279,10 @@ sub wantedrw {
                     print "  WAS: -> \#$romtpt\n";
                     print "  NOW: $rwlsout\n";
                 } else {        # RW and RO are both regular directories
-                    $rolsout = `/bin/ls -ld \Q$ro\E`;
-                    $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*\s+$/$1/;
+                    $rwlsout = lslout($rwmode,$rwlink,$rwuid,$rwgid,
+                                      $rwsize,$rwmtime,1);
+                    $rolsout = lslout($romode,$rolink,$rouid,$rogid,
+                                      $rosize,$romtime,1);
                     if ( $rwlsout ne $rolsout ) {
                         print "Changed (dirs): $rwtrim\n";
                         print "  WAS: $rolsout\n";
@@ -195,15 +296,13 @@ sub wantedrw {
                 }
             } else {            # RW is regular dir, RO is neither link, dir, or mtpt
                 print "File replaced by directory: $rwtrim\n";
-                $rolsout = `/bin/ls -ld \Q$ro\E`;
-                $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*\s+$/$1/;
+                $rolsout = lslout($romode,$rolink,$rouid,$rogid,$rosize,$romtime,0);
                 print "  WAS: $rolsout\n";
                 print "  NOW: $rwlsout\n"
                 }
         } 
     } else {                    # RW is not link, directory, or mountpoint
-        $rwlsout = `/bin/ls -ld \Q$rw\E`;
-        $rwlsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*\s+$/$1/;
+        $rwlsout = lslout($rwmode,$rwlink,$rwuid,$rwgid,$rwsize,$rwmtime,0);
         if ( $roislink ) {      # RW is file, RO is link
             print "Link replaced by non-link: $rwtrim\n";
             print "  WAS: $rolink\n";
@@ -213,15 +312,13 @@ sub wantedrw {
                 print "Mountpoint replaced by non-mountpoint: $rwtrim\n";
                 print "  WAS: -> \#$romtpt\n";
             } else {            # RW is file, RO is regular dir
-                $rolsout = `/bin/ls -ld \Q$ro\E`;
-                $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*\s+$/$1/;
+                $rolsout = lslout($romode,$rolink,$rouid,$rogid,$rosize,$romtime,0);
                 print "Directory replaced by non-directory: $rwtrim\n";
                 print "  WAS: $rolsout\n";
             }
             print "  NOW: $rwlsout\n";
         } else {                # RW is file, RO is too.
-            $rolsout = `/bin/ls -ld \Q$ro\E`;
-            $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*\s+$/$1/;
+            $rolsout = lslout($romode,$rolink,$rouid,$rogid,$rosize,$romtime,0);
             if ( $rwlsout ne $rolsout ){
                 print "Changed: $rwtrim\n";
                 print "  WAS: $rolsout\n";
@@ -288,14 +385,12 @@ sub wantedro {
                 if ( $ro ne $startro ) { $File::Find::prune = 1; return; }
             } else {
                 print "Deleted directory: $rotrim\n";
-#                $rolsout = `/bin/ls -ld \Q$ro\E`;
-#                $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*\s+$/$1/;
+#                $rolsout = lslout($romode,$rolink,$rouid,$rogid,$rosize,$romtime,0);
 #                print "  $rolsout\n";
             }
         } else {
             print "Deleted: $rotrim\n";
-#            $rolsout = `/bin/ls -ld \Q$ro\E`;
-#            $rolsout =~ s/(\S+\s+\S+\s+\S+\s+\S+\s+\S+).*\s+$/$1/;
+#            $rolsout = lslout($romode,$rolink,$rouid,$rogid,$rosize,$romtime,0);
 #            print "  $rolsout\n";
         }
     } elsif ( $roisdir && $roismtpt ) {
