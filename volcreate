@@ -326,14 +326,15 @@ $0 =~ s%.*/%%;
 
 # Parse command line options.  We do allow an odd number of arguments for
 # ACLs, in order to allow things like -clear.
-my ($clone, $help, $replicas, $type, $version);
+my ($clone, $help, $quiet, $replicas, $type, $version);
 Getopt::Long::config ('bundling', 'no_ignore_case', 'require_order');
-GetOptions ('clone|c=s'            => \$clone,
-            'help|h'               => \$help,
-            'dry-run|just-print|n' => \$JUSTPRINT,
-            'replicas|r=i'         => \$replicas,
-            'type|t=s'             => \$type,
-            'version|v'            => \$version) or exit 1;
+GetOptions ('c|clone=s'            => \$clone,
+            'h|help'               => \$help,
+            'q|quiet'              => \$quiet,
+            'n|dry-run|just-print' => \$JUSTPRINT,
+            'r|replicas=i'         => \$replicas,
+            't|type=s'             => \$type,
+            'v|version'            => \$version) or exit 1;
 if ($help) {
     print "Feeding myself to perldoc, please wait....\n";
     exec ('perldoc', '-t', $0) or die "Cannot fork: $!\n";
@@ -347,6 +348,12 @@ if ($help) {
 }
 if ($replicas && !$type) { die "-r option given without -t option\n" }
 $replicas ||= 0;
+
+# If quiet operation was requested, cheat by rerouting stdout to /dev/null.
+if ($quiet) {
+    open (STDOUT, '> /dev/null')
+        or die "$0: cannot redirect stdout to /dev/null: $!\n";
+}
 
 # Fill in the various information that we need.
 my ($server, $partition, $volume, $quota, $mtpt, @acls);
@@ -415,10 +422,10 @@ volcreate - Create and mount a new AFS volume
 
 =head1 SYNOPSIS
 
-B<volcreate> [B<-hvn>] [B<-c> I<clone-from>] I<server> I<part> I<volume>
+B<volcreate> [B<-hnqv>] [B<-c> I<clone-from>] I<server> I<part> I<volume>
 I<quota> I<mount> [I<acl> ...]
 
-B<volcreate> [B<-hvn>] [B<-c> I<clone-from>] B<-t> I<type>
+B<volcreate> [B<-hnqv>] [B<-c> I<clone-from>] B<-t> I<type>
 [B<-r> I<replicas>] I<volume> I<quota> I<mount> [I<acl> ...]
 
 =head1 DESCRIPTION
@@ -480,6 +487,10 @@ to C<perldoc -t>).
 =item B<-n>, B<--dry-run>, B<--just-print>
 
 Don't run any commands, just print out what would have been done.
+
+=item B<-q>, B<--quiet>
+
+Run quietly.  Only errors (if any) will be output.
 
 =item B<-r> I<replicas>, B<--replicas>=I<replicas>
 
