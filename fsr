@@ -18,7 +18,6 @@ use File::Find;
 $File::Find::dont_use_nlink = 1;        # Required due to AFS
 
 $FSBASE = "/usr/pubsw/bin/fs";
-$MOUNTCHK = "$FSBASE lsmount";
 
 $TRUE = 1;
 $FALSE = 0;
@@ -112,18 +111,20 @@ extractFScommand
    # we don't find the list of directories that way, we pull them out of the
    # remaining positional arguments which are now simple to parse.
    @FSHEAD = ();
-   my $seen;
+   my ($seen, $flag, $required);
    while (@ARGV) {
        $_ = shift @ARGV;
        if ($_ =~ /^-(.)/) {
            my $option = $1;
            if ($option eq $props[2]) {
+               $flag = $_;
                push (@FILES, shift @ARGV) while (@ARGV && $ARGV[0] !~ /^-/);
            } elsif ($options{$option}) {
                push (@FSHEAD, $_);
                push (@FSHEAD, shift @ARGV)
                    while (@ARGV && $ARGV[0] !~ /^-/);
                if ($props[2] eq 't' && $option eq 'f') { $seen = 1 }
+               $required = 1;
            } else {
                push (@FSHEAD, $_);
            }
@@ -131,8 +132,11 @@ extractFScommand
            push (@FSTAIL, $_);
        }
    }
-   unless (@FILES) {
+   if (@FILES) {
+       push (@FSHEAD, $flag);
+   } else {
        push (@FSHEAD, shift @FSTAIL) if ($props[0] && !$seen);
+       push (@FSHEAD, "-$props[2]") if $required;
        if ($props[1]) {
            push (@FILES, shift @FSTAIL)
                while (@FSTAIL && $FSTAIL[0] !~ /^-/);
@@ -146,7 +150,18 @@ sub
 ismtpt
 {
    my $test = $_[0];
-   my $mtpt = `$MOUNTCHK $test 2>& 1`;
+
+   # A little complexity to appropriately handle directories with embedded
+   # newlines.  
+   my $pid = fork;
+   if (!defined $pid) {  die "can't fork: $!\n";  } 
+   elsif ($pid == 0) 
+   {
+      close (STDERR);
+      close (STDOUT);
+      exec ($FSBASE, 'lsmount', $test) or die "can't exec fs: $!\n";
+   }
+   waitpid ($pid, 0);
    return ($? == 0);
 }
 
@@ -184,7 +199,8 @@ expandInitialDirList
       while (@FILES)
       {
          my $file = pop @FILES;
-         if (! ismtpt($file))  {  push(@DirStack, $file);  }
+         if (ismtpt($file))  {  warn "Skipping mount point $file\n";  }
+         else  {  push(@DirStack, $file);  }
       }
    }
    else {  @DirStack = @FILES;  }
@@ -204,6 +220,11 @@ expandDirList(@DirStack);
 
 # At this point, we have the complete list of directories we wish to work
 # with sitting in @DirList, so let's just walk through it.
+
+if (! @DirList)
+{
+   die "$0: No directories to process.\n";
+}
 
 while (@DirList)
 {
