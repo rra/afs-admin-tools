@@ -2,19 +2,21 @@
 
 use File::Find;
 
-if ($ARGV[0] eq '-T') { shift; $checktext = 1; }
+$checktext = 1; # Default is to check text differences
+if ($ARGV[0] eq '-T') { shift; $checktext = 0; }
 
 $argc = @ARGV;
 die "Too many arguments: frak rw [ro]\n" if ($argc > 2);
 
 $rw = $ARGV[0];
 if ( $argc == 1 && length($rw) >= 7 && substr($rw,0,7) eq '/afs/ir' ) {
-    warn "RW path argument specified RO syntax, autocorrecting\n";
+    warn "Warning: RW path argument specified RO syntax, autocorrecting\n";
     substr($rw,0,7) = "/afs/.ir";
 }
 
 $ro = ( $argc == 2 ? $ARGV[1] : $rw ) ;
-$ro =~ s:/afs/\.ir\.stanford\.edu/:/afs/ir/: ;
+$rw =~ s:^/afs/\.ir(\.stanford\.edu)?/:/afs/.ir.stanford.edu/: ;
+$ro =~ s:^/afs/(\.)?ir(\.stanford\.edu)?/:/afs/ir.stanford.edu/: ;
 
 $startrw = $rw;
 $startro = $ro;
@@ -24,7 +26,7 @@ $| = 1;
 sub wantedrw {
     $rw = $File::Find::name;
     $ro = $rw;
-    $ro =~ s:/afs/\.ir\.stanford\.edu/:/afs/ir/: ;
+    $ro =~ s:^\Q$startrw\E:$startro: ;
     ($rwtrim = $rw) =~ s/\.stanford\.edu//;
 
     if ($rw eq $startrw) {
@@ -36,27 +38,24 @@ sub wantedrw {
         return;
     }
 
+
     $rwmtpt = `/usr/pubsw/bin/fs lsmount $rw  2>&1`;
     $rwismtpt = ( $? == 0 ) ;
     $rwmtpt =~ s/.*is a mount point for volume \'\#(\S+)\'/$1/ if $rwismtpt;
     $romtpt = `/usr/pubsw/bin/fs lsmount $ro  2>&1`;
     $roismtpt = ( $? == 0 ) ;
     $romtpt =~ s/.*is a mount point for volume \'\#(\S+)\'/$1/ if $roismtpt;
-    if ( ! $rwismtpt ) {
-        ($rwdev,$rwino,$rwmode,$rwlink,$rwuid,
-         $rwgid,$rwrdev,$rwsize,$rwatime,
-         $rwmtime,$rwctime,$rwblksize,$rwblocks) = lstat($rw);
-        $rwislink = (-l _);
-        $rwexists = (-e _);
-        $rwisdir  = (-d _);
-    }
-    if ( ! $roismtpt ) {
-        ($rodev,$roino,$romode,$rolink,$rouid,
-         $rogid,$rordev,$rosize,$roatime,
-         $romtime,$roctime,$roblksize,$roblocks) = lstat($ro);
-        $roislink = (-l _);
-        $roexists = (-e _);
-    }
+    ($rwdev,$rwino,$rwmode,$rwlink,$rwuid,
+     $rwgid,$rwrdev,$rwsize,$rwatime,
+     $rwmtime,$rwctime,$rwblksize,$rwblocks) = lstat($rw);
+    $rwislink = (-l _);
+    $rwexists = (-e _);
+    $rwisdir  = (-d _);
+    ($rodev,$roino,$romode,$rolink,$rouid,
+     $rogid,$rordev,$rosize,$roatime,
+     $romtime,$roctime,$roblksize,$roblocks) = lstat($ro);
+    $roislink = (-l _);
+    $roexists = (-e _);
 
     if ( $rwismtpt && ! $roismtpt ) {
         if ( ! $roexists ) {
@@ -148,7 +147,7 @@ sub wantedro {
     $ro = $File::Find::name;
     return if ($ro eq $startro);
     $rw = $ro;
-    $rw =~ s:/afs/ir/:/afs/\.ir/: ;
+    $rw =~ s:^\Q$startro\E:$startrw: ;
     ($rotrim = $ro) =~ s/\.stanford\.edu//;
 
     $rwmtpt = `/usr/pubsw/bin/fs lsmount $rw  2>&1`;
@@ -157,18 +156,14 @@ sub wantedro {
     $romtpt = `/usr/pubsw/bin/fs lsmount $ro  2>&1`;
     $roismtpt = ( $? == 0 ) ;
     $romtpt =~ s/.*is a mount point for volume \'\#(\S+)\'/$1/ if $roismtpt;
-    if ( ! $rwismtpt ) {
-        ($rwdev,$rwino,$rwmode,$rwlink,$rwuid,
-         $rwgid,$rwrdev,$rwsize,$rwatime,
-         $rwmtime,$rwctime,$rwblksize,$rwblocks) = lstat($rw);
-    }
-    if ( ! $roismtpt ) {
-        ($rodev,$roino,$romode,$rolink,$rouid,
-         $rogid,$rordev,$rosize,$roatime,
-         $romtime,$roctime,$roblksize,$roblocks) = lstat($ro);
-        $roislink = (-l _);
-        $roexists = (-e _);
-    }
+    ($rwdev,$rwino,$rwmode,$rwlink,$rwuid,
+     $rwgid,$rwrdev,$rwsize,$rwatime,
+     $rwmtime,$rwctime,$rwblksize,$rwblocks) = lstat($rw);
+    ($rodev,$roino,$romode,$rolink,$rouid,
+     $rogid,$rordev,$rosize,$roatime,
+     $romtime,$roctime,$roblksize,$roblocks) = lstat($ro);
+    $roislink = (-l _);
+    $roexists = (-e _);
 
     if ( $roismtpt ) {
         if ( ! $rwismtpt && ! $rwexists ) {
