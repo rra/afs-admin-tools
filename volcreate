@@ -353,6 +353,9 @@ my ($server, $partition, $volume, $quota, $mtpt, @acls);
 if ($type) {
     die "Usage: volcreate -t type volname quota mountpoint [acls]\n"
         if @ARGV < 3;
+    if ($type =~ /-r[wo]$/) {
+        die "Type ends in -ro or -rw (maybe you meant to use the -r flag?)\n";
+    }
     ($volume, $quota, $mtpt, @acls) = @ARGV;
 } else {
     die "Usage: volcreate server partition volname quota mtpt [acls]\n"
