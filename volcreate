@@ -582,6 +582,8 @@ A sample entry would be:
 Note that the regex line must not be indented (must begin in column one),
 and the ACL lines must be indented.  Think of it as Python.
 
+=back
+
 =head1 SEE ALSO
 
 L<vos_create(1)>, L<vos_dump(1)>, L<vos_restore(1)>, L<fs_mkmount(1)>,
