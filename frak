@@ -367,7 +367,7 @@ sub compare_new ( $ ) {
         apply  ('file', $saved, $info{bname});
     }
     print_ls ('', \%info) unless defined $info{volume};
-    print_acl ('is', $info{acl}) if $info{isdir};
+    print_acl ('is', $info{acl}) if $info{isdir} && $info{acl};
 }
 
 # Print out the appropriate information when the read/write volume has a link.
