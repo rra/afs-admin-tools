@@ -2,6 +2,8 @@
 
 use File::Find;
 
+if ($ARGV[0] eq '-T') { shift; $checktext = 1; }
+
 $rw=$ARGV[0];
 $ro=$rw;
 $ro =~ s:/afs/\.ir\.stanford\.edu/:/afs/ir/: ;
@@ -40,23 +42,15 @@ sub wantedrw {
         }
     } else { # not a directory, check changes
         if ( $rwislink && $roislink && ( $rwmtime != $romtime ) ) {
-#            local $_;
-
             print "Link change: $rwtrim\n";
             $rwlink = readlink($rw);
             $rolink = readlink($ro);
             print "  Link WAS: $rolink\n  Link NOW: $rwlink\n";
-#            open(LSLOUT,"ls -l $ro $rw|");
-#            while (<LSLOUT>) {
-#                s/(\Q$ro\E|\Q$rw\E) -> //;
-#                print;
-#            }
-#            close(LSLOUT);
         }
         elsif ( $rwmtime != $romtime ) {
             print "Changed: $rwtrim\n";
-            if (-T $rw && -T $ro) {
-#      system("diff -c $rw $ro");
+            if ($checktext && -T $rw && -T $ro) {
+                system("diff -u $rw $ro");
             }
         }
     }
