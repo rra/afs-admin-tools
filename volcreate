@@ -277,9 +277,13 @@ volume_setacls ($volume, $mtpt, @acls);
 if ($replicas && $replicas > 0) {
     my @locations = ($server, $partition);
     if ($replicas > 1) {
-        my @servers = find_servers ($type, 'ro');
-        my $range = ($replicas * 2) - 3;
-        push (@locations, (find_targets @servers)[0 .. $range]);
+        my @servers = find_servers ($type, 'ro-first');
+        push (@locations, (find_targets @servers)[0 .. 1]);
+        if ($replicas > 2) {
+            @servers = find_servers ($type, 'ro');
+            my $range = ($replicas * 2) - 5;
+            push (@locations, (find_targets @servers)[0 .. $range]);
+        }
     }
     volume_replicate ($volume, @locations);
 }
@@ -421,8 +425,10 @@ volume.
 
 For non-replicated volumes, the type in this file should match the type
 given to B<volcreate>.  For replicated volumes, the type suffixed with
-C<-rw> will be used for the read/write volume and the type suffixed with
-C<-ro> will be used for the read-only volumes.
+C<-rw> will be used for the read/write volume, the type suffixed with
+C<-ro-first> will be used for the first replica (on a different server than
+the replica that lives with the read/write volume), and the type suffixed
+with C<-ro> will be used for the other read-only volumes.
 
 =head1 SEE ALSO
 
