@@ -111,7 +111,7 @@ while (@ARGV) {
     }
     $replicas++;
 }
-if ($replicas < $sites) {
+if ($sites && $replicas < $sites) {
     die "$0: would reduce replication from $sites sites to $replicas\n";
 }
 
