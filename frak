@@ -797,4 +797,16 @@ trees which can be used to revert and re-apply those changes, as may be the
 case when a volume containing changes needs to be relocated without
 releasing the changes therein contained.
 
+When run with the --changedir option, frak creates the following structure: a changedir directory containing old and new subdirectories to hold the files
+which changed between the two directories, and three bundle files.
+The three bundle files are as follows:
+      changes.b - a bundle to populate the old and new directories
+      revert.b  - a bundle to change the new directory back to the old state
+      apply.b   - a bundle to re-apply the changes into the new state
+The original purpose of this script is to provide a mechanism for reverting
+changes contained in the RW copies of unreleased volumes containing changes
+in order that they can be safely released (for relocation purposes, for 
+example.) and then reapplied back to the state they had been in.
+
 =cut
+
