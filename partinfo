@@ -5,12 +5,13 @@ $ID = q$Id$;
 #
 # Written by Neil Crellin <neilc@stanford.edu>
 # Modifications by Russ Allbery <rra@stanford.edu>
-# Copyright 1998, 1999 Board of Trustees, Leland Stanford Jr. University
+# Copyright 1998, 1999, 2003
+#     Board of Trustees, Leland Stanford Jr. University
 #
 # Takes an AFS server as an argument and then runs vos partinfo on it,
 # parsing the output and producing a slightly more verbose report that
 # includes percent full on each partition and how much more data can be
-# added to that partition before putting it over 80% full.
+# added to that partition before putting it over 85% full.
 
 use vars qw($ID);
 use Getopt::Long qw(GetOptions);
@@ -56,12 +57,12 @@ while (<PARTINFO>) {
         ($partition, $free, $total) = ($1, $2, $3);
         $partition = "$server $partition";
         $used = $total - $free;
-        $usable = int ($free - 0.2 * $total);
+        $usable = int ($free - 0.15 * $total);
         $pfree = 100 * $used / $total;
         if ($color) {
             my $c = '';
             if    ($pfree < 60) { $c = Term::ANSIColor::color ('green')  }
-            elsif ($pfree > 80) { $c = Term::ANSIColor::color ('red')    }
+            elsif ($pfree > 85) { $c = Term::ANSIColor::color ('red')    }
             printf "%17s: %10d %10d %10d %s%7.2f%%%s %10d\n", $partition,
                    $total, $used, $free, $c, $pfree,
                    Term::ANSIColor::color ('reset'), $usable;
@@ -81,7 +82,7 @@ close PARTINFO;
 # Print totals if we're supposed to.
 if ($totals) {
     $tused = $ttotal - $tfree;
-    $tusable = int ($tfree - 0.2 * $ttotal);
+    $tusable = int ($tfree - 0.15 * $ttotal);
     $tpfree = 100 * $tused / $ttotal;
     print "\n";
     if ($color) {
@@ -136,7 +137,7 @@ amount of used and free space.  Unlike vos partinfo, however, it also
 formats the output into a more easily readable tabular form, displays the
 total disk space, the used disk space, and the free disk space, calculates
 what percent full the partition is, and displays the amount that can still
-be put on the partition before it goes over 80% full.
+be put on the partition before it goes over 85% full.
 
 Normally, B<partinfo> displays a header above the output giving the meaning
 of the columns, but this can optionally be suppressed.  B<partinfo> can also
@@ -163,7 +164,7 @@ Print out the version of B<partinfo> and exit.
 
 Use color to highlight interesting data.  Currently this just means that the
 percent full column will be shown in green for partitions under 60% full and
-in red for partitions over 80% full.  Using this option requires that the
+in red for partitions over 85% full.  Using this option requires that the
 Term::ANSIColor module be installed and available on the user's system (this
 module is not required if B<-c> is not used).
 
@@ -199,9 +200,8 @@ L<vos(1)>, L<vos_partinfo(1)>
 
 =head1 AUTHORS
 
-Original Perl script written by Neil Crellin E<lt>neilc@stanford.eduE<gt>,
-modified by Russ Allbery E<lt>rra@stanford.eduE<gt> to use formats, to
-include an explanatory header, to use color if wanted, and to add optional
-totals.
+Original Perl script written by Neil Crellin <neilc@stanford.edu>, modified
+by Russ Allbery <rra@stanford.edu> to use formats, to include an explanatory
+header, to use color if wanted, and to add optional totals.
 
 =cut
