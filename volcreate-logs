@@ -1,0 +1,314 @@
+#!/usr/bin/perl -w
+$ID = q$Id$;
+#
+# make-log-volumes -- Create and grant quota to log volumes in AFS.
+#
+# Written by Russ Allbery <rra@stanford.edu>
+# Copyright 2002 Board of Trustees, Leland Stanford Jr. University
+
+##############################################################################
+# Modules and declarations
+##############################################################################
+
+# The path to the config file specifying what to do.
+$CONFIG = '/afs/ir/service/afs/data/log-volumes';
+
+# The path to volcreate, used to create volumes.
+$VOLCREATE = '/afs/ir/service/afs/scripts/volcreate';
+
+require 5.005;
+
+use strict;
+use vars qw($CONFIG $ID $JUSTPRINT $VOLCREATE);
+use subs qw(system);
+
+use Getopt::Long qw(GetOptions);
+
+##############################################################################
+# Overrides
+##############################################################################
+
+# We override system to honor the global $JUSTPRINT variable.  It otherwise
+# works the same way as system normally does.
+sub system {
+    if ($JUSTPRINT) {
+        print "@_\n";
+        return 0;
+    } else {
+        return CORE::system (@_);
+    }
+}
+
+##############################################################################
+# Volume quota checking
+##############################################################################
+
+# Takes the volume name, the full path to a mount point for a volume, and the
+# minimum quota that that volume should have.  Increases the quota of the
+# volume to at least the minimum and by 10% if the volume is within 90% of its
+# quota.
+sub check_quota {
+    my ($volume, $mountpoint, $minimum) = @_;
+    $minimum *= 1000;
+    my @listquota = `fs listquota $mountpoint 2>&1`;
+
+    # The first line is always headers, so ignore it.  The second line is
+    # either an error message or our quota information, in the form volume
+    # name, quota, used amount, used percentage, and partition percentage.
+    shift @listquota;
+    if ($listquota[0] =~ /^fs: /) {
+        warn $listquota[0];
+        warn "Unable to get quota information for $volume\n";
+        return;
+    }
+    my ($volname, $quota, $used, $percent) = split (' ', $listquota[0]);
+    unless ($percent =~ /%$/) {
+        warn "Unable to parse: $listquota[0]";
+        warn "Unable to get quota information for $volume\n";
+        return;
+    }
+
+    # Figure out if we need to do anything.
+    my $newquota = $quota;
+    $newquota = int (($quota / 1000) * 1.1) * 1000 if ($used > 90);
+    $newquota = $minimum if ($newquota < $minimum);
+    if ($newquota != $quota) {
+        print "Setting quota to ", $newquota / 1000, " for $volume\n";
+        if (system ('fs', 'setquota', $mountpoint, $newquota) != 0) {
+            warn "fs setquota $mountpoint $newquota exited with status ",
+                ($? >> 8), "\n";
+            warn "Unable to set quota for $volume\n";
+        }
+    }
+}
+
+##############################################################################
+# Finding volumes
+##############################################################################
+
+# Given a path, run fs lsmount on it and return the volume name, or undef if
+# this path isn't a mount point.
+sub lsmount {
+    my ($path) = @_;
+    my $volume = `fs lsmount $path 2>&1`;
+    if ($volume =~ /is a mount point for volume \'\#([^\']+)\'/) {
+        return $1;
+    } else {
+        return undef;
+    }
+}
+
+# Given the base path and the current month and year, find the full path to
+# the volume associated with that month and year.  Returns the full path and
+# the volume name in a list.
+sub find_volume_month {
+    my ($base, $month, $year) = @_;
+    $month = sprintf ("%02d", $month);
+    my ($volume, $path);
+    if (-d "$base/$year/$month") {
+        $volume = lsmount ("$base/$year/$month");
+        $path = "$base/$year/$month" if defined $volume;
+    }
+    return ($volume, $path);
+}
+
+# Given the base path and the current year, find the full path to the volume
+# associated with that year for logs where we only create one volume per year.
+# Returns the full path and the volume name in a list.
+sub find_volume_year {
+    my ($base, $year) = @_;
+    my ($volume, $path);
+    if (-d "$base/$year") {
+        $volume = lsmount ("$base/$year");
+        $path = "$base/$year" if defined $volume;
+    }
+    return ($volume, $path);
+}
+
+##############################################################################
+# Creating volumes
+##############################################################################
+
+# Given a volume name, mount point, and quota, create that volume.  Performs
+# some basic consistency checks to make sure that the quota isn't too large
+# and that the volume or mount point don't already exist.
+sub create_volume {
+    my ($volume, $mountpoint, $quota) = @_;
+    if ($quota > 2000) {
+        warn "$volume not created: ${quota}MB exceeds maximum of 2GB\n";
+        return;
+    }
+    if (-d "$mountpoint") {
+        warn "$volume not created: $mountpoint already exists\n";
+        return;
+    }
+    if (system ("vos examine $volume >/dev/null 2>&1") == 0) {
+        warn "$volume not created: volume already exists\n";
+        return;
+    }
+
+    # Create the volume.
+    if (system ($VOLCREATE, qw/-t logs/, $volume, $quota, $mountpoint) != 0) {
+        warn "$VOLCREATE -t logs $volume $quota $mountpoint exited with",
+            " status ", ($? >> 8), "\n";
+        warn "$volume not fully created, please check\n";
+    } else {
+        print "Created $volume with quota $quota\n";
+    }
+}
+
+# For a yearly log volume, create all of the month subdirectories.  Takes the
+# base directory of the new log volume.
+sub create_month_dirs {
+    my ($base) = @_;
+    for (1..12) {
+        my $month = sprintf ("%02d", $_);
+        mkdir ("$base/$month", 0755)
+            or warn "Could not create $base/$month: $!\n";
+    }
+}
+
+##############################################################################
+# Configuration parsing
+##############################################################################
+
+# Parse a log section, returning an anonymous hash representing the log
+# configuration.
+sub parse_log {
+    my ($config) = @_;
+    my (%log, $last);
+    while (<$config>) {
+        next if /^\s*\#/;
+        next if /^\s*$/;
+        if (/^\s*\}/) {
+            my $okay = 1;
+            for (qw/name path type quota acl/) {
+                $okay = 0 unless exists $log{$_};
+            }
+            if ($okay) {
+                return \%log;
+            } else {
+                warn "Missing attributes in log group ending on line $.\n";
+                return undef;
+            }
+        }
+        if (/^\s*\S+:\s+/) {
+            my ($key, $value) = split (/:\s+/, $_, 2);
+            $key =~ s/^\s+//;
+            $value =~ s/\s+$//;
+            unless ($value) {
+                warn "Parse error in log group on line $.\n";
+                next;
+            }
+            unless ($key =~ /^(name|path|type|quota|acl)$/) {
+                warn "Unknown attribute $key on line $.\n";
+                next;
+            }
+            $log{$key} = $value;
+            $last = $key;
+        } else {
+            unless ($last) {
+                warn "Parse error in log group on line $.\n";
+                next;
+            }
+            my $value = $_;
+            $value =~ s/^\s+//;
+            $value =~ s/\s+$//;
+            $log{$last} .= $value;
+        }
+    }
+    warn "Unterminated log group on line $.\n";
+    return undef;
+}
+
+# Parse the configuration file.  Returns a list of anonymous hashes containing
+# configuration information for each log.
+sub parse_config {
+    my @config;
+    open (CONFIG, $CONFIG) or die "Cannot open $CONFIG: $!\n";
+    while (<CONFIG>) {
+        next if /^\s*\#/;
+        next if /^\s*$/;
+        if (/^\s*log\s+\{\s*$/) {
+            my $config = parse_log (\*CONFIG);
+            push (@config, $config) if $config;
+        } else {
+            warn "Parse error in configuration file on line $.\n";
+            next;
+        }
+    }
+    return @config;
+}
+
+##############################################################################
+# Main routine
+##############################################################################
+
+# Parse command line options.
+my ($help, $version);
+Getopt::Long::config ('bundling', 'no_ignore_case');
+GetOptions ('dry-run|just-print|n' => \$JUSTPRINT,
+            'help|h'               => \$help,
+            'version|v'            => \$version) or exit 1;
+if ($help) {
+    print "Feeding myself to perldoc, please wait....\n";
+    exec ('perldoc', '-t', $0) or die "Cannot fork: $!\n";
+} elsif ($version) {
+    my $version = join (' ', (split (' ', $ID))[1..3]);
+    $version =~ s/,v\b//;
+    $version =~ s/(\S+)$/($1)/;
+    print $version, "\n";
+    exit 0;
+}
+
+# Parse the configuration and get the current time.
+my @config = parse_config;
+my ($day, $month, $year) = (localtime)[3..5];
+$month++;
+$year += 1900;
+
+# For each log configuration, update the quota of the current volume if
+# necessary and then create the new volume if it's past the 20th of the month.
+for my $config (@config) {
+    my ($path, $volume);
+    if ($$config{type} eq 'monthly') {
+        ($volume, $path) = find_volume_month ($$config{path}, $month, $year);
+    } elsif ($$config{type} eq 'yearly') {
+        ($volume, $path) = find_volume_year ($$config{path}, $year);
+    } else {
+        warn "Unknown type $$config{type} for $$config{name}\n";
+        next;
+    }
+    unless ($path) {
+        warn "Could not find current volume for $$config{name}\n";
+        next;
+    }
+    check_quota ($volume, $path, $$config{quota});
+    if ($day >= 20) {
+        my $month = $month;
+        my $year = $year;
+        $month++;
+        if ($month > 12) {
+            $month = 1;
+            $year++;
+        }
+        my ($path, $volume);
+        if ($$config{type} eq 'monthly') {
+            $path = sprintf ("$$config{path}/%04d/%02d", $year, $month);
+            $volume = sprintf ("%s.%04d%02d", $$config{name}, $year, $month);
+            if (!-d "$$config{path}/$year") {
+                if (!mkdir ("$$config{path}/$year", 0755)) {
+                    warn "Could not create $$config{path}/$year: $!\n";
+                    warn "$volume not created\n";
+                    next;
+                }
+            }
+        } elsif ($$config{type} eq 'yearly') {
+            $path = sprintf ("$$config{path}/%04d", $year);
+            $volume = sprintf ("%s.%04d", $$config{name}, $year);
+        }
+        if (!-d $path) {
+            create_volume ($volume, $path, $$config{quota});
+        }
+    }
+}
