@@ -77,7 +77,7 @@ sub report {
 sub check_quota {
     my ($volume, $mountpoint, $minimum) = @_;
     $minimum *= 1000;
-    my @listquota = `fs listquota $mountpoint 2>&1`;
+    my @listquota = `/usr/afsws/bin/fs listquota $mountpoint 2>&1`;
 
     # The first line is always headers, so ignore it.  The second line is
     # either an error message or our quota information, in the form volume
@@ -101,7 +101,8 @@ sub check_quota {
     $newquota = $minimum if ($newquota < $minimum);
     if ($newquota != $quota) {
         report "Setting quota to ", $newquota / 1000, "MB for $volume\n";
-        if (system ('fs', 'setquota', $mountpoint, $newquota) != 0) {
+        if (system ('/usr/afsws/bin/fs', 'setquota', $mountpoint,
+                    $newquota) != 0) {
             warn "fs setquota $mountpoint $newquota exited with status ",
                 ($? >> 8), "\n";
             warn "Unable to set quota for $volume\n";
@@ -117,7 +118,7 @@ sub check_quota {
 # this path isn't a mount point.
 sub lsmount {
     my ($path) = @_;
-    my $volume = `fs lsmount $path 2>&1`;
+    my $volume = `/usr/afsws/bin/fs lsmount $path 2>&1`;
     if ($volume =~ /is a mount point for volume \'\#([^\']+)\'/) {
         return $1;
     } else {
