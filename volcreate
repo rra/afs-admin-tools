@@ -31,5 +31,5 @@ if ( @acls ) {
         or warn "Failed to set acls, status of $?\n";
 }
 system('chmod', '755', $mtpt) == 0 or warn "Couldn't chmod\n";
-system('loadmtpt', $mtpt) == 0 
+system('/afs/ir/site/leland/afs/scripts/loadmtpt', $mtpt) == 0 
     or warn "Couldn't load mountpoint, status of $?\n"; 
