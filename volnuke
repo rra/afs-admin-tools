@@ -118,6 +118,10 @@ sub volinfo {
 # Usage message, in case the command line syntax is wrong.
 sub usage { die "Usage: $0 <volume>\n" }
 
+# Make sure that all output is sent immediately, since vos remove reports some
+# things to stderr.
+$| = 1;
+
 # Parse our options.
 my $fullpath = $0;
 $0 =~ s%.*/%%;
