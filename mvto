@@ -14,6 +14,7 @@ $ID = q$Id$;
 # replication pattern of a volume differs from what you want it to be and
 # correct it.
 
+use strict;
 use vars qw($ID);
 use Getopt::Long qw(GetOptions);
 
@@ -119,8 +120,14 @@ while (@ARGV) {
     }
     $replicas++;
 }
-if ($sites && $replicas < $sites) {
-    die "$0: would reduce replication from $sites sites to $replicas\n";
+if ($sites) {
+    if ($replicas < $sites) {
+        die "$0: would reduce replication from $sites sites to"
+            . " $replicas sites\n";
+    } elsif ($replicas > $sites) {
+        die "$0: would increase replication from $sites sites to"
+            . " $replicas sites\n";
+    }
 }
 
 # Do the volume release, if necessary.
@@ -190,12 +197,10 @@ the volume after the move (since volume moves have a side effect of deleting
 the backup volume).  Don't use this program on volumes that shouldn't have a
 backup volume.
 
-B<mvto> will happily increase the replication of a volume if it's already
-replicated and more replica sites are specified on the command line than it
-currently has (or if it doesn't already have a replica on the same partition
-as the read/write).  It won't, however, replicate an unreplicated volume or
-decrease the number of replication sites; those operations must be done by
-hand.
+B<mvto> will neither increase nor decrease the replication of a volume.  If
+the number of replication sites should be changed, or if the volume is
+currently unreplicated and should be replicated, this should be done by hand
+before running mvto.
 
 AFS servers may be specified as just a number; all numeric server names will
 have C<afssvr> prepended to them.
