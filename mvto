@@ -103,6 +103,7 @@ sub available_space {
     while (<INFO>) {
         if (m%^Free space on \S+ \S+: (\d+) K blocks out of total (\d+)%) {
             my ($free, $total) = ($1, $2);
+            close INFO;
             return ($free - $total * (1 - $THRESHOLD));
         } else {
             die "$0: vos partinfo said $_";
