@@ -1,0 +1,334 @@
+#!/usr/pubsw/bin/perl
+$version = q$Id$;
+#
+# fsr -- Recursively applies AFS "fs" commands to subdirectories.
+#
+# Copyright 1999 Board of Trustees, Leland Stanford Jr. University
+#
+# Written by Russ Allbery <rra@stanford.edu> and
+#            Carol Oliver <phoenix@stanford.edu>
+# Inspired by a script written by Larry Schwimmer <schwim@stanford.edu>
+
+$| = 1;    # Deep magic.  (fs prints output right away; script output is
+           # buffered through stdio.  This lets us interleave script and
+           # command output.
+
+use Getopt::Long qw(GetOptions);
+use File::Find;
+$File::Find::dont_use_nlink = 1;        # Required due to AFS
+
+$FSBASE = "/usr/pubsw/bin/fs";
+$MOUNTCHK = "$FSBASE lsmount";
+
+$TRUE = 1;
+$FALSE = 0;
+$VERBOSE = $FALSE;
+$CROSSMOUNTS = $FALSE;
+$ZEROMOUNTS = $FALSE;
+
+$FSCMD = "";    # "fs" subcommand of choice
+$FSTAIL = "";   # "fs" subcommand elements that may follow directory list
+
+# Know who we are.  "fullpath" is passed to perldoc to give usage.  The
+# simplified $0 is useful for error messages.
+$fullpath = $0;
+$0 =~ s%.*/%%;       # Strip path information
+   
+sub
+readOptions
+{
+   my @options = (
+                'help|h',               # print usage and exit
+                'version|v',            # print version and exit
+                'verbose|V',            # name all dirs while working
+                'mountpts|m',           # cross mountpoints
+                'zeromnts|M'            # ignore any initial mountpoints
+                );
+
+   Getopt::Long::config('bundling', 'no_ignore_case', 'no_getopt_compat',
+                        'pass_through');
+   GetOptions(\%config, @options) or exit(1);
+
+   if ($config{help})
+   {
+      print "Feeding myself to perldoc, please wait....\n";
+      exec ('perldoc', '-t', $fullpath) or die "$0: can't fork: $!\n";
+   }
+   elsif ($config{version})
+   {
+      # Extract the relevant info from the CVS version string
+      my ($program, $ver) = (split (' ', $version))[1,2];
+      $program =~ s/,v$//;
+      die "$program $ver\n";
+   }
+
+   if ($config{verbose})  {  $VERBOSE = $TRUE;  }
+   if ($config{mountpts})  {  $CROSSMOUNTS = $TRUE;  }
+   if ($config{zeromnts})  {  $ZEROMOUNTS = $TRUE;  }
+}
+
+sub
+extractFScommand
+{
+   $FSCMD = shift @ARGV;
+
+   # First value in this table says whether there are positional arguments
+   # before the files we'll recurse on.  The second value says whether the
+   # files we'll recurse on are the last positional arguments (and we can
+   # suck up everything to the end of the arguments unless there's a
+   # flag). Third value gives the option letter for the option that takes a
+   # list of directories.
+   my %commands = (cleanacl  => [0, 'yes', 'p'],
+                   copyacl   => [1, 'yes', 't'],
+                   ca        => [1, 'yes', 't'],
+                   listacl   => [0, 'yes', 'p'],
+                   la        => [0, 'yes', 'p'],
+                   listquota => [0, 'yes', 'p'],
+                   lq        => [0, 'yes', 'p'],
+                   lsmount   => [0, 'yes', 'd'],
+                   setacl    => [0, undef, 'd'],
+                   sa        => [0, undef, 'd'],
+                   setquota  => [0, undef, 'p'],
+                   sq        => [0, undef, 'p'],
+                   whereis   => [0, 'yes', 'p']);
+
+   # These are fs options for various commands that take arguments.  (There
+   # are other options that don't take arguments; these are special because
+   # we have to pull their arguments out of the argument list.)
+   my %options = map { $_ => 1 } qw(a d f p t);
+
+   # Figure out what fs command we're dealing with.
+   my @fscmds = grep { /^$FSCMD/ } keys %commands;
+   if (@fscmds > 1) {
+       die "Ambiguous fs command $FSCMD\n";
+   } elsif (!@fscmds) {
+       die "Unknown or unapplicable fs command $FSCMD\n";
+   }
+   $FSCMD = $fscmds[0];
+   my @props = @{$commands{$FSCMD}};
+
+   # First we take a pass through all of our arguments, pulling out anything
+   # that's an option (and all of the arguments that go with it).  Then, if
+   # we don't find the list of directories that way, we pull them out of the
+   # remaining positional arguments which are now simple to parse.
+   @FSHEAD = ();
+   my $seen;
+   while (@ARGV) {
+       $_ = shift @ARGV;
+       if ($_ =~ /^-(.)/) {
+           my $option = $1;
+           if ($option eq $props[2]) {
+               push (@FILES, shift @ARGV) while (@ARGV && $ARGV[0] !~ /^-/);
+           } elsif ($options{$option}) {
+               push (@FSHEAD, $_);
+               push (@FSHEAD, shift @ARGV)
+                   while (@ARGV && $ARGV[0] !~ /^-/);
+               if ($props[2] eq 't' && $option eq 'f') { $seen = 1 }
+           } else {
+               push (@FSHEAD, $_);
+           }
+       } else {
+           push (@FSTAIL, $_);
+       }
+   }
+   unless (@FILES) {
+       push (@FSHEAD, shift @FSTAIL) if ($props[0] && !$seen);
+       if ($props[1]) {
+           push (@FILES, shift @FSTAIL)
+               while (@FSTAIL && $FSTAIL[0] !~ /^-/);
+       } else {
+           push (@FILES, shift @FSTAIL);
+       }
+   }
+}
+
+sub
+ismtpt
+{
+   my $test = $_[0];
+   my $mtpt = `$MOUNTCHK $test 2>& 1`;
+   return ($? == 0);
+}
+
+sub
+wanted_no_mounts
+{
+   return if (-l $_ or !-d _);   # skip symlinks and non-directories
+   if (ismtpt($_))
+   {  $File::Find::prune = 1; }
+   else
+   {  push (@DirList, $File::Find::name);  }
+}
+
+sub
+wanted_with_mounts
+{
+   return if (-l $_ or !-d _);   # skip symlinks and non-directories
+   push (@DirList, $File::Find::name);
+}
+
+sub
+expandDirList
+{
+   if ($CROSSMOUNTS)
+   {  find(\&wanted_with_mounts, @_);  }
+   else
+   {  find(\&wanted_no_mounts, @_);  }
+}
+
+sub
+expandInitialDirList
+{
+   if ($ZEROMOUNTS)
+   {
+      while (@FILES)
+      {
+         my $file = pop @FILES;
+         if (! ismtpt($file))  {  push(@DirStack, $file);  }
+      }
+   }
+   else {  @DirStack = @FILES;  }
+}
+
+##########################################################################
+# Main
+##########################################################################
+if (! @ARGV)    # No commandline arguments given
+{  die "Type '$0 -h' for usage help.\n";  }
+else {  readOptions();  }
+
+extractFScommand();     # Sets $FSCMD and $FSTAIL
+                        # Also sets $DirArgs (which may be "*")
+expandInitialDirList();
+expandDirList(@DirStack);
+
+# At this point, we have the complete list of directories we wish to work
+# with sitting in @DirList, so let's just walk through it.
+
+while (@DirList)
+{
+   my $adir = pop(@DirList);
+   if ($VERBOSE)  {  print "\nDirectory: $adir\n";  }
+   (system("$FSBASE $FSCMD @FSHEAD $adir @FSTAIL") == 0)
+        or die "$0: $FSBASE $FSCMD @FSHEAD $adir @FSTAIL: $?\n";
+}
+
+exit(0);
+
+##########################################################################
+# Documentation
+##########################################################################
+
+=head1 NAME
+
+fsr - Recursively applies AFS "fs" commands to subdirectories.
+
+=head1 SYNOPSIS
+
+fsr [-h] [-v]
+
+fsr [-V] [-m] I<fs-subcommand syntax>
+
+=head1 SUPPORTED C<fs> SUBCOMMANDS
+
+cleanacl, copyacl/ca, listacl/la, listquota/lq, lsmount, setacl/sa,
+setquota/sq, whereis
+
+Type C<fs help subcommand> for usage info from C<fs>.
+
+=head1 DESCRIPTION
+
+B<fsr> provides an intelligent wrapper around the basic AFS C<fs> command,
+allowing "fs" commands to be recursively applied to directories and their
+subdirectories, since the C<fs> command suite, as shipped from Transarc
+with their AFS distributions, does not handle operations on more than one
+directory at a time.
+
+=head1 OPTIONS
+
+B<fsr> supports the following command-line options.
+
+=over 4
+
+=item B<-h>, B<--help>
+
+Print out this documentation (which is done simply by feeding the
+script to C<perldoc -t> and then exit.
+
+=item B<-v>, B<--version>
+
+Print the version number of B<fsr> and exit.
+
+=item B<-V>, B<--verbose>
+
+Enable Verbose Mode.  Makes B<fsr> work verbosely, telling you what
+directories it is now applying your "fs" command to -- particularly
+useful since some of the "fs" commands work silently and you would
+sometimes like to be able to watch what the script is doing.
+
+=item B<-m>, B<--mountpts>
+
+Enable crossing of mountpoints.  This is of use to a very limited number
+of highly complex structures in AFS and is therefore disabled by default.
+
+This option is useful primarily to AFS system administrators.
+
+=item B<-M>, B<--zeromnts>
+
+Weeds out any subdirectories initially passed in that are also
+mountpoints.  (Default behavior is to apply the specified fs subcommand to
+all initially specified directories; this is usually the desired
+behavior.)
+
+Of very limited use, and primarily useful only to AFS sysem
+administrators.
+
+=back
+
+When called without arguments, B<fsr> prints instructions on how to obtain
+this help info, and exits.
+
+=head1 EXAMPLES
+
+    fsr sa /afs/ir/group/mygroup person1 all person2 none
+
+Gives "person1" all AFS permissions (rlidwka) on the group directory
+"mygroup" and removes all AFS permissions to that directory for "person2".
+
+    fsr sa -dir cs* -acl personX read
+
+Gives "personX" AFS read permissions (rl) to the directories beginning
+with "cs" in the current working directory.  Applies the fs sa subcommand
+to anything the shell expands "cs*" into, regardless of whether or not
+that directory might be a mountpoint.  Recursively applies the fs sa
+subcommand to all subdirectories of "cs*", except for any subdirectories
+of "cs*" which might be mountpoints.  This is usually the desired
+behavior.
+
+    fsr sa -dir cs* -acl personX read -m
+
+Same as above, but recursively descends across mountpoints.  Not useful to
+most people, but of use to some people managing complex AFS spaces.
+
+    fsr sa -dir * -acl personX read -M
+
+Similar to the two examples above, but this one examines the things "*"
+expanded into and weeds out any directories within the current working
+which are also mountpoints.  This is of extremely limited use, but might
+be useful to people managing very complex AFS spaces which have
+directories which contain some subdirectories in the same volume and other
+subdirectories in other volumes, if they need to apply an fs subcommand to
+only the subdirectories that are in the same volume.
+
+=head1 NOTES
+
+B<fsr> ignores symlinks.
+
+=head1 AUTHORS
+
+Inspired by a script written by Larry Schwimmer
+E<lt>schwim@stanford.eduE<gt>.  Written by Russ Allbery
+E<lt>rra@stanford.eduE<gt> and Carol Oliver
+E<lt>phoenix@stanford.eduE<gt>.
+
+=cut
