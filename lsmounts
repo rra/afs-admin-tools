@@ -227,7 +227,7 @@ output will be that of B<loadmtpt>:
 fs(1), fs_lsmount(1), loadmtpt(1)
 
 The current version of this program is available from its web page at
-<http://www.eyrie.org/~eagle/software/lsmounts/>.
+L<http://www.eyrie.org/~eagle/software/lsmounts/>.
 
 =head1 AUTHORS
 
