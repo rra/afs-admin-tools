@@ -4,6 +4,7 @@ require 5.003; # I prototype a sub below.
 
 use File::Find;
 use Date::Format;
+use Getopt::Long;
 use Carp;
 
 # Mode masks from /usr/include/sys/stat.h
@@ -51,14 +52,16 @@ $S_IROTH = 00004;           #  read permission: other
 $S_IWOTH = 00002;           #  write permission: other 
 $S_IXOTH = 00001;           #  execute permission: other 
 
+use vars qw($opt_suppressdiffs $opt_maxdifflines $opt_leave2ndRW);
 
-$maxdifflines = 200;
+%options = (MaxDiffLines => 200);
 
-$checktext = 1; # Default is to check text differences
-if ($ARGV[0] eq '-T') { shift; $checktext = 0; }
+&GetOptions("suppressdiffs!","maxdifflines=i","leave2ndRW!");
+
+if ($opt_maxdifflines) { $options{'MaxDiffLines'} = $opt_maxdifflines; }
 
 $argc = @ARGV;
-die "Too many arguments: frak rw [ro]\n" if ($argc > 2);
+die "Too many arguments: frak {options} rw [ro]\n" if ($argc > 2);
 
 $rw = $ARGV[0];
 if ( $argc == 1 && length($rw) >= 7 && substr($rw,0,7) eq '/afs/ir' ) {
@@ -68,7 +71,13 @@ if ( $argc == 1 && length($rw) >= 7 && substr($rw,0,7) eq '/afs/ir' ) {
 
 $ro = ( $argc == 2 ? $ARGV[1] : $rw ) ;
 $rw =~ s:^/afs/\.ir(\.stanford\.edu)?/:/afs/.ir.stanford.edu/: ;
-$ro =~ s:^/afs/(\.)?ir(\.stanford\.edu)?/:/afs/ir.stanford.edu/: ;
+if ( $opt_leave2ndRW ) {
+    $ro =~ s:^/afs/(\.)?ir(\.stanford\.edu)?/:/afs/.ir.stanford.edu/: ;
+} else {
+    $ro =~ s:^/afs/(\.)?ir(\.stanford\.edu)?/:/afs/ir.stanford.edu/: ;
+}
+
+$maxdifflines = $options{'MaxDiffLines'};
 
 $startrw = $rw;
 $startro = $ro;
@@ -327,7 +336,7 @@ sub wantedrw {
                 print "Changed: $rwtrim\n";
                 print "  WAS: $rolsout\n";
                 print "  NOW: $rwlsout\n";
-                if ($checktext && -T $rw && -T $ro) {
+                if (!$opt_suppressdiffs && -T $rw && -T $ro) {
                     local $_;
                     local @diffs = ();
                     
