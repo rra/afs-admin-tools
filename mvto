@@ -196,7 +196,7 @@ my $replicas = 1;
 while (@ARGV) {
     my ($server, $part) = findpartition (splice (@ARGV, 0, 2));
     if ($ro{$server}) {
-        print "$volume is already on $server $ro{$server}\n";
+        print "$volume is already on $server\n";
         $needspace++;
         delete $ro{$server};
     } else {
