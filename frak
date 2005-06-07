@@ -669,7 +669,7 @@ $0 =~ s%.*/%%;
 $| = 1;
 
 # Parse our options.
-my ($help, $nolog, $version);
+my ($help, $logfile, $nolog, $version);
 Getopt::Long::config ('bundling');
 GetOptions ('cross-mounts|C'     => \$CROSSMOUNT,
             'change-dir|c=s'     => \$CHANGEDIR,
@@ -677,7 +677,7 @@ GetOptions ('cross-mounts|C'     => \$CROSSMOUNT,
             'max-diff-lines|d=i' => \$MAXDIFF,
             'help|h'             => \$help,
             'no-log|L'           => \$nolog,
-            'log-file|l=s'       => \$LOGFILE,
+            'log-file|l=s'       => \$logfile,
             'munge|m'            => \$MUNGE,
             'quiet|q'            => \$QUIET,
             'suppress-diff|s'    => \$NODIFF,
@@ -693,6 +693,7 @@ if ($help) {
     print $version, "\n";
     exit 0;
 }
+$LOGFILE = $logfile if $logfile;
 
 # Check the directories we're given.  If the -m option is used, we should
 # instead have a single argument naming the volume and will be mounting it in
@@ -712,7 +713,7 @@ if (@ARGV == 1 && $ARGV[0] !~ m%/%) {
     system ($FS, 'mkmount', '-rw', $rw, $volume) == 0
         or die "$0: failed to create mount for $volume\n";
     $mounted = 1;
-    $LOGFILE = $volume unless $nolog;
+    $LOGFILE = $volume unless ($nolog || $logfile);
 } else {
     ($rw, $ro) = @ARGV;
     if (@ARGV == 1 && $rw =~ m%/afs/[^.]%) {
