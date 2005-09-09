@@ -380,10 +380,8 @@ sub move_single {
         push (@commands, move ($volume, @source, @dest));
         push (@commands, backup ($volume));
         if ($volinfo{sites} > 0) {
-            if ($volinfo{ro}{$source[0]} ne $volinfo{rwpart}) {
-                my $ro = "$volume.readonly";
-                my $part = $volinfo{ro}{$source[0]};
-                push (@commands, remove ($source[0], $part, $ro));
+            if ($volinfo{ro}{$dest[0]}) {
+                die "$0: $volume already has a replica on on $dest[0]\n";
             }
             push (@commands, addsite (@dest, $volume));
             $needrelease++;
@@ -415,8 +413,10 @@ sub move_single {
     # If we need a release, add that and also the removal of the old site.
     if ($needrelease) {
         push (@commands, release ($volume));
-        push (@commands, remove (@source, "$volume.readonly"))
-            if ($source[1] eq $volinfo{ro}{$source[0]});
+        if ($volinfo{ro}{$source[0]}) {
+            my $part = $volinfo{ro}{$source[0]};
+            push (@commands, remove ($source[0], $part, "$volume.readonly"));
+        }
     }
 
     # Run the commands.
@@ -484,12 +484,9 @@ die "Usage: $0 [-fns] [-t <threshold>] -L <list>\n"
 
 # If -s was given, there must be exactly four arguments left, a pair giving
 # the current server and partition, and a pair saying where that replica of
-# the volume should be moved to.  Make sure they don't specify the same
-# server.
+# the volume should be moved to.
 die "Usage: $0 -s (-l <list> | <volume>) <server> <part> <server> <part>\n"
     if ($single && @ARGV != 4 && !$location);
-die "$0: cannot move a specific site between partitions on the same server\n"
-    if ($single && @ARGV && $ARGV[0] eq $ARGV[2]);
 
 # Do the work.  If -l or -L was given, this means looping on the volumes
 # listed in that file; otherwise, just move the single volume.
@@ -681,7 +678,8 @@ release>, creation of backup volumes, keeping a replica with the read/write
 volume, and so forth.
 
 It generally doesn't make any sense to use this option with unreplicated
-volumes.  For those, there's no reason not to use the regular syntax.
+volumes unless it's used in conjunction with B<-L> with mixed RO and RW
+volumes.  Otherwise, there's no reason not to use the regular syntax.
 What's special about this option is that it leaves all other sites of a
 volume alone.
 
@@ -737,6 +735,13 @@ that line of the file, aborting if moving a volume would bring any partition
 to over 85% full:
 
     mvto -t 0.85 -L locations
+
+=head1 BUGS
+
+If a replicated volume has no RO replica on the same server as its RW site,
+moving the RW site with C<mvto -s> will increase the replication of the
+volume by adding a new RO site at the destination for the RW site without
+removing one of the other RO sites.
 
 =head1 AUTHORS
 
