@@ -210,7 +210,7 @@ sub remove {
 # Return a command to release a volume.
 sub release {
     my ($volume) = @_;
-    return [ $VOS, 'release', '-f', '-v', $volume ];
+    return [ $VOS, 'release', '-v', $volume ];
 }
 
 # Build the commands required to move the read/write site of a volume.  Takes
