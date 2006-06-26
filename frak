@@ -390,7 +390,7 @@ sub compare_link ( $$ ) {
     } elsif ($roinfo{isdir}) {
         print_name ('Directory replaced by link', $rwinfo{name});
         revert ('delete', $rwinfo{bname});
-        revert ('dir', $rwinfo{bname}, bundle_stat ($roinfo{stat}));
+        revert ('dir', $rwinfo{bname}, bundle_mode ($roinfo{stat}));
         apply  ('system', '/bin/rm', '-rf', $rwinfo{bname});
         apply  ('link', $rwinfo{link}, $rwinfo{bname});
     } else {
