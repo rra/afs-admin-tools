@@ -58,6 +58,7 @@ sub parse_fs_command {
     my %commands = (cleanacl  => [undef, 'yes', 'p'],
                     copyacl   => ['yes', 'yes', 't'],
                     ca        => ['yes', 'yes', 't'],
+                    flush     => [undef, 'yes', 'p'],
                     listacl   => [undef, 'yes', 'p'],
                     la        => [undef, 'yes', 'p'],
                     listquota => [undef, 'yes', 'p'],
