@@ -16,9 +16,9 @@ $ID = q$Id$;
 ##############################################################################
 
 # The full path to fs.  Allow for Linux where the preferred location may be on
-# local disk.
+# local disk.  Fall back to the user's path.
 ($FS)  = grep { -x $_ } qw(/usr/bin/fs /usr/afsws/bin/fs /usr/pubsw/bin/fs);
-$FS ||= '/usr/afsws/bin/fs';
+$FS ||= 'fs';
 
 ##############################################################################
 # Modules and declarations
@@ -31,6 +31,17 @@ use vars qw($CROSSMOUNTS $FS $ID $NOMOUNTS $VERBOSE);
 
 use File::Find qw(find);
 use Getopt::Long qw(GetOptions);
+
+# We fork fs lsmount inside a grep (in File::Find) and expect to be able to do
+# an exec after fork, neither of which work with the native Windows
+# ActiveState Perl fork emulation.
+BEGIN {
+    if ($^O eq 'MSWin32') {
+        $0 =~ s%.*/%%;
+        warn "$0 doesn't work with native Windows (but may with Cygwin)\n";
+        exit;
+    }
+}
 
 ##############################################################################
 # Command-line parsing
@@ -58,6 +69,7 @@ sub parse_fs_command {
     my %commands = (cleanacl  => [undef, 'yes', 'p'],
                     copyacl   => ['yes', 'yes', 't'],
                     ca        => ['yes', 'yes', 't'],
+                    examine   => [undef, 'yes', 'p'],
                     flush     => [undef, 'yes', 'p'],
                     listacl   => [undef, 'yes', 'p'],
                     la        => [undef, 'yes', 'p'],
