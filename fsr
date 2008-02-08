@@ -1,4 +1,4 @@
-#!/usr/pubsw/bin/perl
+#!/usr/bin/perl
 $ID = q$Id$;
 #
 # fsr -- Recursively apply AFS fs commands.
