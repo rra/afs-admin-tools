@@ -17,7 +17,7 @@ $ID = q($Id$ );
 $ADDRESS        = 'afs-reports@lists.stanford.edu';
 
 # The full path to aklog, used to obtain AFS tokens from a Kerberos ticket.
-$AKLOG          = '/usr/local/bin/aklog';
+$AKLOG          = '/usr/bin/aklog';
 
 # The path to the config file specifying what to do.
 $CONFIG         = '/afs/ir/service/afs/data/log-volumes';
@@ -27,7 +27,8 @@ $CONFIG         = '/afs/ir/service/afs/data/log-volumes';
 $TICKETS        = '/var/run';
 
 # The path to volcreate, used to create volumes.
-$VOLCREATE      = '/afs/ir/service/afs/scripts/volcreate';
+($VOLCREATE) = grep { -x $_ } 
+               qw(/usr/bin/volcreate /afs/ir/service/afs/scripts/volcreate);
 
 # The full path to fs and vos.  Allow for Linux where the preferred location
 # may be on local disk.

@@ -28,7 +28,9 @@ $ACLS = '/afs/ir/service/afs/data/acl-rules';
 $CUTOFF = 0.2;
 
 # The full path to the loadmtpt utility.
-$LOADMTPT = '/afs/ir/service/afs/scripts/loadmtpt';
+($LOADMTPT)  = grep { -x $_ } 
+                    qw(/usr/bin/loadmtpt /afs/ir/service/afs/scripts/loadmtpt);
+$LOADMTPT ||= '/usr/bin/loadmtpt';
 
 # The path to a file containing a list of current AFS servers and their volume
 # types.  See the documentation for its format.
