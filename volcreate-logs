@@ -46,7 +46,7 @@ require 5.005;
 use strict;
 use vars qw($ADDRESS $AKLOG $CONFIG $FS $ID $JUSTPRINT $MAIL $MAILOPEN
             $TICKETS $VOLCREATE $VOS);
-use subs qw(system);
+#use subs qw(system);
 
 use Getopt::Long qw(GetOptions);
 use POSIX qw(strftime);
@@ -108,15 +108,16 @@ sub check_quota {
     $minimum *= 1000;
     my @listquota = `$FS listquota $mountpoint 2>&1`;
 
-    # The first line is always headers, so ignore it.  The second line is
-    # either an error message or our quota information, in the form volume
-    # name, quota, used amount, used percentage, and partition percentage.
-    shift @listquota;
+    # The first line is either an error or headers.  Check to see if it is
+    # an error, and if not, ignore it.  The second line is our quota
+    # information, in the form volume name, quota, used amount, used
+    # percentage, and partition percentage.
     if ($listquota[0] =~ /^fs: /) {
         warn $listquota[0];
         warn "Unable to get quota information for $volume\n";
         return;
     }
+    shift @listquota;
     my ($volname, $quota, $used, $percent) = split (' ', $listquota[0]);
     unless ($percent =~ s/%(<\<)?$//) {
         warn "Unable to parse: $listquota[0]";
@@ -355,8 +356,8 @@ if ($help) {
 if ($ticket) {
     require AFS::Utils;
     $ticket = $TICKETS . '/' . $ticket unless $ticket =~ m%^/%;
-    $ENV{KRBTKFILE} = $ticket;
-    AFS::Utils::setpag () or die "$0: unable to setpag: $!\n";
+    $ENV{KRB5CCNAME} = $ticket;
+    AFS::Utils::setpag() or die "$0: unable to setpag: $!\n";
     system ($AKLOG) == 0 or die "$0: unable to obtain tokens\n";
 }
 
@@ -509,9 +510,9 @@ Do the same, but instead send the report via e-mail.
 
     volcreate-logs -m
 
-Do the same, but obtain AFS credentials from /var/run/admin.k4.tgt:
+Do the same, but obtain AFS credentials from /var/run/lsdb.k5.tgt:
 
-    volcreate-logs -m -k admin.k4.tgt
+    volcreate-logs -m -k lsdb.k5.tgt
 
 Check to see what needs to be done, but don't actually do it.  Instead, just
 print the commands that would be executed to standard out:
@@ -551,7 +552,7 @@ year of logs, and <quota> is the starting quota for each volume in MB.
 Used to create volumes.  B<volcreate-logs> assumes that B<volcreate> has
 been configured to set the appropriate initial ACLs for the volumes.
 
-=item F</usr/local/bin/aklog>
+=item F</usr/bin/aklog>
 
 If AFS token authentication is requested with the B<-k> flag, this program
 will be run to obtain an AFS token from the specified ticket cache.
