@@ -46,7 +46,7 @@ require 5.005;
 use strict;
 use vars qw($ADDRESS $AKLOG $CONFIG $FS $ID $JUSTPRINT $MAIL $MAILOPEN
             $TICKETS $VOLCREATE $VOS);
-#use subs qw(system);
+use subs qw(system);
 
 use Getopt::Long qw(GetOptions);
 use POSIX qw(strftime);
@@ -357,8 +357,9 @@ if ($ticket) {
     require AFS::Utils;
     $ticket = $TICKETS . '/' . $ticket unless $ticket =~ m%^/%;
     $ENV{KRB5CCNAME} = $ticket;
+    $ENV{KRBTKFILE} = $ticket;
     AFS::Utils::setpag() or die "$0: unable to setpag: $!\n";
-    system ($AKLOG) == 0 or die "$0: unable to obtain tokens\n";
+    CORE::system ($AKLOG) == 0 or die "$0: unable to obtain tokens\n";
 }
 
 # Parse the configuration and get the current time.
