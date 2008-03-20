@@ -195,8 +195,8 @@ sub find_volume_year {
 # already exist.
 sub create_volume {
     my ($volume, $mountpoint, $quota, $quiet) = @_;
-    if ($quota > 20000) {
-        warn "$volume not created: ${quota}MB exceeds maximum of 20GB\n";
+    if ($quota > 50000) {
+        warn "$volume not created: ${quota}MB exceeds maximum of 50GB\n";
         return;
     }
     $mountpoint =~ s%/afs/ir%/afs/.ir%;
