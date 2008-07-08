@@ -93,15 +93,13 @@ sub check_mount {
     my $newpath = fix_path($path);
     if (!$newpath) {
         print "REMOVING $volume => $path (bad path)\n";
-        delete_mount($$mtpts{$volume});
-        delete $$mtpts{$volume};
+        delete_mount($volume);
         return 1;
     } else {
         my $real = path_to_volume($newpath);
         if (!$real || $real ne $volume) {
             print "REMOVING $volume => $path\n";
-            delete_mount($$mtpts{$volume});
-            delete $$mtpts{$volume};
+            delete_mount($volume);
             return 1;
         } elsif ($path ne $newpath) {
             print "CANONIFYING $volume => $newpath\n";
@@ -114,31 +112,23 @@ sub check_mount {
 # Go through the mounts and verify that each still exists and has the correct
 #  path information.  If given a list of volume names, only check those names.
 #  Otherwise, check all volumes in the mountpoint database.
-sub clean_mounts {
+sub clean_mtpt {
     my (@check_mounts) = @_;
 
     my %mtpts = find_all_mounts();
 
     # If we're given a list of volumes on the command line, process those.
-    # Otherwise, process every volume in the database.  The duplication of code is
-    # annoying here, but I don't see a good way to avoid it without reading all
-    # the volumes in the database into memory.
+    # Otherwise, process every volume in the database.  The duplication of code 
+    # is annoying here, but I don't see a good way to avoid it without reading
+    # all the volumes in the database into memory.
     my ($count, $deletes) = (0, 0);
-    if (@check_mounts) {
-        for my $volume (@check_mounts) {
-            next unless exists $mtpts{$volume};
-            $deletes += check_mount ($volume, \%mtpts);
-        } continue {
-            $count++;
-            print "$count entries processed\n" if ($count % 1000 == 0);
-        }
-    } else {
-        for my $volume (keys %mtpts) {
-            $deletes += check_mount ($volume, \%mtpts);
-        } continue {
-            $count++;
-            print "$count entries processed\n" if ($count % 1000 == 0);
-        }
+    @check_mounts = keys %mtpts unless @check_mounts;
+    for my $volume (@check_mounts) {
+        next unless exists $mtpts{$volume};
+        $deletes += check_mount ($volume, \%mtpts);
+    } continue {
+        $count++;
+        print "$count entries processed\n" if ($count % 1000 == 0);
     }
     print "$count entries total processed\n";
     print "$deletes entries deleted\n";
@@ -161,7 +151,7 @@ sub mount_exists {
     $sth->execute();
 
     if (my $ref = $sth->fetchrow_hashref()) {
-        print $ref->{'path'};
+#        print $ref->{'path'};
         return 1;
     }
 
@@ -288,8 +278,7 @@ sub update_mount {
 sub dump_mounts {
     my (%mounts) = find_all_mounts();
     print "No mounts found!\n" unless %mounts;
-    #    foreach my $volname (sort keys %mounts) {
-    foreach my $volname (keys %mounts) {
+    foreach my $volname (sort keys %mounts) {
         print $volname, "\t", $mounts{$volname}{'path'}, "\t",
               $mounts{$volname}{'volid'}, "\n";;
     }
