@@ -118,7 +118,7 @@ sub clean_mtpt {
     my %mtpts = find_all_mounts();
 
     # If we're given a list of volumes on the command line, process those.
-    # Otherwise, process every volume in the database.  The duplication of code 
+    # Otherwise, process every volume in the database.  The duplication of code
     # is annoying here, but I don't see a good way to avoid it without reading
     # all the volumes in the database into memory.
     my ($count, $deletes) = (0, 0);
@@ -273,6 +273,15 @@ sub update_mount {
 # Misc operations
 ##############################################################################
 
+# Change the settings of an existing mount.  Simply do two changes, one for
+#  path and one for volid.
+sub change_mount {
+    my ($volname, $path, $volid) = @_;
+
+    return update_mount($volname, 'path', $path)
+        && update_mount($volname, 'volid', $volid);
+}
+
 # Print out all existing mountpoints.  Simply grab from the general find
 #  subroutine for this, then print out prettily.
 sub dump_mounts {
@@ -352,6 +361,12 @@ if (!defined $action || $action eq '' || $action eq 'help') {
         die "$0: mount point, path, and volid must be given\n";
     }
     exit (store_mount ($mount, $path, $volid) ? 0 : 1);
+} elsif ($action eq 'change') {
+    my ($mount, $path, $volid) = @ARGV;
+    unless ($mount) {
+        die "$0: mount point, path, and volid must be given\n";
+    }
+    exit (change_mount ($mount, $path, $volid) ? 0 : 1);
 } elsif ($action eq 'delete') {
     my ($mount) = @ARGV;
     unless ($mount) { die "$0: volume name must be given\n" }
