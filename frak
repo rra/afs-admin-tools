@@ -21,7 +21,7 @@ $ID = q$Id$;
 ##############################################################################
 
 # The full path to a suitable diff that supports -u.
-$DIFF = '/usr/pubsw/bin/diff';
+$DIFF = '/usr/bin/diff';
 
 # The default limit on the size of a diff in lines that will be included.
 $MAXDIFF = 200;
