@@ -496,7 +496,9 @@ if ($list) {
     open (LIST, $list) or die "$0: cannot open $list: $!\n";
     my @volumes = <LIST>;
     close LIST;
-    chomp @volumes;
+    for (@volumes) {
+        s/\s+$//;
+    }
     my $total = scalar @volumes;
     my $i = 0;
     for (@volumes) {
