@@ -306,18 +306,6 @@ Delete the volume ls.trip.windlord:
 The user will be prompted to confirm the action, and possibly prompted again
 if the volume is replicated and the read-only replicas have accesses.
 
-=head1 FILES
-
-=over 4
-
-=item F</afs/ir/service/afs/data/adsm-delete>
-
-Where the names of deleted volumes are saved so that they can also be purged
-from ADSM.  This path can be overridden with the B<-f> option and changed at
-the top of this script.
-
-=back
-
 =head1 SEE ALSO
 
 fs_lsmount(1), vos(1), vos_examine(1), vos_remove(1)
