@@ -4,7 +4,8 @@ $ID = q($Id$ );
 # volnuke -- Delete a volume, tracking down what servers it's on.
 #
 # Written by Russ Allbery <rra@stanford.edu>
-# Copyright 2002, 2003, 2004 Board of Trustees, Leland Stanford Jr. University
+# Copyright 2002, 2003, 2004, 2010
+#     Board of Trustees, Leland Stanford Jr. University
 #
 # This program is free software; you may redistribute it and/or modify it
 # under the same terms as Perl itself.
@@ -18,9 +19,6 @@ $ID = q($Id$ );
 ##############################################################################
 # Site configuration
 ##############################################################################
-
-# The full path to the list of volumes awaiting ADSM deletion.
-$NUKELIST       = '/afs/ir/service/afs/data/adsm-delete';
 
 # The full path to fs and vos.  Allow for Linux where the preferred location
 # may be on local disk.
@@ -36,7 +34,7 @@ $VOS ||= '/usr/pubsw/bin/vos';
 require 5.005;
 
 use strict;
-use vars qw($FS $ID $NUKELIST $VOS);
+use vars qw($FS $ID $VOS);
 
 use Date::Parse qw(str2time);
 use Getopt::Long qw(GetOptions);
@@ -156,7 +154,6 @@ if ($help) {
     print $version, "\n";
     exit;
 }
-$file = $NUKELIST unless $file;
 
 # Volume name or mount point is always the first argument.  Pull it off and
 # figure out where this volume is.
@@ -276,8 +273,7 @@ is here solely for sysctl/remctl backend scripts.
 =item B<-f> I<list-file>, B<--file>=I<list-file>
 
 Append the name of the deleted volume to the given file.  This is used to
-accumulate a list of volumes to purge from backups.  If no file is given, it
-defaults to F</afs/ir/service/afs/data/adsm-delete>.
+accumulate a list of volumes to purge from backups.
 
 =item B<-h>, B<--help>
 
@@ -335,7 +331,7 @@ Russ Allbery <rra@stanford.edu>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2002, 2003, 2004 Board of Trustees, Leland Stanford Jr.
+Copyright 2002, 2003, 2004, 2010 Board of Trustees, Leland Stanford Jr.
 University.
 
 This program is free software; you may redistribute it and/or modify it
