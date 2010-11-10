@@ -6,7 +6,8 @@ $ID = q$Id$;
 # Written by Carol Oliver
 # Portions by Russ Allbery <rra@stanford.edu>
 # Inspired by a script written by Larry Schwimmer
-# Copyright 1999, 2004 Board of Trustees, Leland Stanford Jr. University
+# Copyright 1999, 2004, 2006, 2007, 2008, 2010
+#     Board of Trustees, Leland Stanford Jr. University
 #
 # This program is free software; you may redistribute it and/or modify it
 # under the same terms as Perl itself.
@@ -17,7 +18,7 @@ $ID = q$Id$;
 
 # The full path to fs.  Allow for Linux where the preferred location may be on
 # local disk.  Fall back to the user's path.
-($FS)  = grep { -x $_ } qw(/usr/bin/fs /usr/afsws/bin/fs /usr/pubsw/bin/fs);
+($FS) = grep { -x $_ } qw(/usr/bin/fs /usr/afsws/bin/fs /usr/pubsw/bin/fs);
 $FS ||= 'fs';
 
 ##############################################################################
@@ -38,8 +39,7 @@ use Getopt::Long qw(GetOptions);
 BEGIN {
     if ($^O eq 'MSWin32') {
         $0 =~ s%.*/%%;
-        warn "$0 doesn't work with native Windows (but may with Cygwin)\n";
-        exit;
+        die "$0 doesn't work with native Windows (but may with Cygwin)\n";
     }
 }
 
@@ -162,6 +162,9 @@ sub parse_fs_command {
 # directory names.
 sub ismount {
     my ($path) = @_;
+    if ($path =~ /^-/) {
+        $path = "./$path";
+    }
     my $pid = fork;
     if (!defined $pid) {
         die "$0: can't fork: $!\n";
@@ -179,6 +182,9 @@ sub ismount {
 # undef if it is not a mount point.
 sub lsmount {
     my ($path) = @_;
+    if ($path =~ /^-/) {
+        $path = "./$path";
+    }
     my $pid = open (LSMOUNT, '-|');
     if (!defined $pid) {
         die "$0: cannot fork: $!\n";
@@ -221,6 +227,10 @@ sub run_fs {
             $seen{$volume}++;
         }
     }
+
+    # If the directory name starts with a dash, prepend ./ to keep the AFS
+    # command from interpreting it as an option.
+    $path = "./$path" if $path =~ /^-/;
 
     print "\nDirectory: $File::Find::name\n" if $VERBOSE;
     system ($FS, @$head, $path, @$tail) == 0
@@ -391,7 +401,8 @@ script written by Larry Schwimmer.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 1999, 2004 Board of Trustees, Leland Stanford Jr. University.
+Copyright 1999, 2004, 2006, 2007, 2008, 2010 Board of Trustees, Leland
+Stanford Jr. University.
 
 This program is free software; you may redistribute it and/or modify it
 under the same terms as Perl itself.
