@@ -1,17 +1,20 @@
 #!/usr/bin/perl -w
-$ID = q$Id$;
+our $VERSION = '@VERSION@ @DATE@';
 #
 # partinfo -- Show summary of space on AFS server partitions.
+#
+# Takes an AFS server as an argument and then runs vos partinfo on it,
+# parsing the output and producing a slightly more verbose report that
+# includes percent full on each partition and how much more data can be
+# added to that partition before putting it over 85% full.
 #
 # Written by Neil Crellin <neilc@stanford.edu>
 # Modifications by Russ Allbery <rra@stanford.edu>
 # Copyright 1998, 1999, 2003, 2004
 #     Board of Trustees, Leland Stanford Jr. University
 #
-# Takes an AFS server as an argument and then runs vos partinfo on it,
-# parsing the output and producing a slightly more verbose report that
-# includes percent full on each partition and how much more data can be
-# added to that partition before putting it over 85% full.
+# This program is free software; you may redistribute it and/or modify it
+# under the same terms as Perl itself.
 
 ##############################################################################
 # Site configuration
@@ -39,7 +42,7 @@ $VOS ||= 'vos';
 ##############################################################################
 
 use strict;
-use vars qw($ID $THRESH_EMPTY $THRESH_FULL $VOS);
+use vars qw($THRESH_EMPTY $THRESH_FULL $VOS);
 
 use Getopt::Long qw(GetOptions);
 
@@ -99,12 +102,8 @@ if ($help) {
     print "Feeding myself to perldoc, please wait....\n";
     exec ('perldoc', '-t', $fullpath);
 } elsif ($version) {
-    my $version = join (' ', (split (' ', $ID))[1..3]);
-    $version =~ s/,v\b//;
-    $version =~ s/(\S+)$/($1)/;
-    $version =~ tr%/%-%;
-    print $version, "\n";
-    exit;
+    print "partinfo $VERSION\n";
+    exit 0;
 }
 require Term::ANSIColor if $color;
 die "Usage: $0 [-chqtv] [-T <empty>,<full>] <afssvr>\n" if (@ARGV != 1);

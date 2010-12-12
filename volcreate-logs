@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-$ID = q($Id$ );
+our $VERSION = '@VERSION@ @DATE@';
 #
 # volcreate-logs -- Create and grant quota to log volumes in AFS.
 #
@@ -44,7 +44,7 @@ $VOS ||= '/usr/pubsw/bin/vos';
 require 5.005;
 
 use strict;
-use vars qw($ADDRESS $AKLOG $CONFIG $FS $ID $JUSTPRINT $MAIL $MAILOPEN
+use vars qw($ADDRESS $AKLOG $CONFIG $FS $JUSTPRINT $MAIL $MAILOPEN
             $TICKETS $VOLCREATE $VOS);
 use subs qw(system);
 
@@ -341,14 +341,8 @@ if ($help) {
     print "Feeding myself to perldoc, please wait....\n";
     exec ('perldoc', '-t', $0) or die "Cannot fork: $!\n";
 } elsif ($version) {
-    my @version = split (' ', $ID);
-    shift @version if $ID =~ /^\$Id/;
-    my $version = join (' ', @version[0..2]);
-    $version =~ s/,v\b//;
-    $version =~ s/(\S+)$/($1)/;
-    $version =~ tr%/%-%;
-    print $version, "\n";
-    exit;
+    print "volcreate-logs $VERSION\n";
+    exit 0;
 }
 
 # If a ticket cache was specified on the command line, obtain Kerberos tickets

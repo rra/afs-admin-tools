@@ -1,7 +1,13 @@
 #!/usr/bin/perl -w
-$ID = q($Id$ );
+our $VERSION = '@VERSION@ @DATE@';
 #
 # volnuke -- Delete a volume, tracking down what servers it's on.
+#
+# A smart and dangerous vos remove, but one that prompts you to be sure you're
+# doing what you intend.  Deletes a volume without having to know the volume's
+# location beforehand, including tracking down and removing all the
+# replication points.  If the volume is replicated, it also checks to be sure
+# that none of the replicas have been accessed.
 #
 # Written by Russ Allbery <rra@stanford.edu>
 # Copyright 2002, 2003, 2004, 2010
@@ -9,12 +15,6 @@ $ID = q($Id$ );
 #
 # This program is free software; you may redistribute it and/or modify it
 # under the same terms as Perl itself.
-#
-# A smart and dangerous vos remove, but one that prompts you to be sure you're
-# doing what you intend.  Deletes a volume without having to know the volume's
-# location beforehand, including tracking down and removing all the
-# replication points.  If the volume is replicated, it also checks to be sure
-# that none of the replicas have been accessed.
 
 ##############################################################################
 # Site configuration
@@ -34,7 +34,7 @@ $VOS ||= '/usr/pubsw/bin/vos';
 require 5.005;
 
 use strict;
-use vars qw($FS $ID $VOS);
+use vars qw($FS $VOS);
 
 use Date::Parse qw(str2time);
 use Getopt::Long qw(GetOptions);
@@ -145,14 +145,8 @@ if ($help) {
     print "Feeding myself to perldoc, please wait....\n";
     exec ('perldoc', '-t', $fullpath);
 } elsif ($version) {
-    my @version = split (' ', $ID);
-    shift @version if $ID =~ /^\$Id/;
-    my $version = join (' ', @version[0..2]);
-    $version =~ s/,v\b//;
-    $version =~ s/(\S+)$/($1)/;
-    $version =~ tr%/%-%;
-    print $version, "\n";
-    exit;
+    print "volnuke $VERSION\n";
+    exit 0;
 }
 
 # Volume name or mount point is always the first argument.  Pull it off and

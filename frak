@@ -1,7 +1,13 @@
 #!/usr/bin/perl -w
-$ID = q$Id$;
+our $VERSION = '@VERSION@ @DATE@';
 #
 # frak -- Show changes between two AFS trees.
+#
+# Perhaps the single most useful AFS utility if you use replicated volumes
+# regularly.  Compares two AFS trees to each other, generally the read/write
+# and read-only versions of the same volume, and presents a readable summary
+# of the differences so that you can see exactly what will be changed when the
+# volume is released.
 #
 # Written by Neil Crellin <neilc@stanford.edu>
 # Updated by Russ Allbery <rra@stanford.edu>
@@ -9,12 +15,6 @@ $ID = q$Id$;
 #
 # This program is free software; you may redistribute it and/or modify it
 # under the same terms as Perl itself.
-#
-# Perhaps the single most useful AFS utility if you use replicated volumes
-# regularly.  Compares two AFS trees to each other, generally the read/write
-# and read-only versions of the same volume, and presents a readable summary
-# of the differences so that you can see exactly what will be changed when the
-# volume is released.
 
 ##############################################################################
 # Site configuration
@@ -37,10 +37,10 @@ $VOS ||= '/usr/pubsw/bin/vos';
 # Modules and declarations
 ##############################################################################
 
-require 5.005;
+require 5.006;
 
 use strict;
-use vars qw($CHANGEDIR $CROSSMOUNT $DEBUG $DIFF $FS $ID $LOGFILE $MAXDIFF
+use vars qw($CHANGEDIR $CROSSMOUNT $DEBUG $DIFF $FS $LOGFILE $MAXDIFF
             $MUNGE $NODIFF $QUIET $ROOTRO $ROOTRW $VOS);
 
 use Cwd qw(cwd);
@@ -686,11 +686,7 @@ if ($help) {
     print "Feeding myself to perldoc, please wait....\n";
     exec ('perldoc', '-t', $fullpath);
 } elsif ($version) {
-    my $version = join (' ', (split (' ', $ID))[1..3]);
-    $version =~ s/,v\b//;
-    $version =~ s/(\S+)$/($1)/;
-    $version =~ tr%/%-%;
-    print $version, "\n";
+    print "frak $VERSION\n";
     exit 0;
 }
 $LOGFILE = $logfile if $logfile;

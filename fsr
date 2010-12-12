@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-$ID = q$Id$;
+our $VERSION = '@VERSION@ @DATE@';
 #
 # fsr -- Recursively apply AFS fs commands.
 #
@@ -25,10 +25,10 @@ $FS ||= 'fs';
 # Modules and declarations
 ##############################################################################
 
-require 5.003;
+require 5.006;
 
 use strict;
-use vars qw($CROSSMOUNTS $FS $ID $NOMOUNTS $VERBOSE);
+use vars qw($CROSSMOUNTS $FS $NOMOUNTS $VERBOSE);
 
 use File::Find qw(find);
 use Getopt::Long qw(GetOptions);
@@ -260,11 +260,7 @@ if ($help) {
     print "Feeding myself to perldoc, please wait....\n";
     exec ('perldoc', '-t', $0) or die "Cannot fork: $!\n";
 } elsif ($version) {
-    my $version = join (' ', (split (' ', $ID))[1..3]);
-    $version =~ s/,v\b//;
-    $version =~ s/(\S+)$/($1)/;
-    $version =~ tr%/%-%;
-    print $version, "\n";
+    print "fsr $VERSION\n";
     exit 0;
 }
 die "Usage: $0 [-hMmVv] <fs-command> [<fs-options>]\n" unless @ARGV;

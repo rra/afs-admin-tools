@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-$ID = q$Id$;
+our $VERSION = '@VERSION@ @DATE@';
 #
 # lsmounts -- List mountpoints found in a directory.
 #
@@ -31,8 +31,10 @@ $FS ||= '/usr/afsws/bin/fs';
 # Modules and declarations
 ##############################################################################
 
+require 5.006;
+
 use strict;
-use vars qw($FS $ID $LOADMTPT);
+use vars qw($FS $LOADMTPT);
 
 use Cwd qw(cwd);
 use File::Find qw(find);
@@ -83,11 +85,7 @@ if ($help) {
     print "Feeding myself to perldoc, please wait....\n";
     exec ('perldoc', '-t', $fullpath);
 } elsif ($version) {
-    my $version = join (' ', (split (' ', $ID))[1..3]);
-    $version =~ s/,v\b//;
-    $version =~ s/(\S+)$/($1)/;
-    $version =~ tr%/%-%;
-    print $version, "\n";
+    print "lsmounts $VERSION\n";
     exit 0;
 }
 die "$0: only at most one of -R or -r should be given\n"

@@ -1,7 +1,11 @@
 #!/usr/bin/perl -w
-$ID = q($Id$ );
+our $VERSION = '@VERSION@ @DATE@';
 #
 # volcreate -- Create a volume, mount and set acl and quota
+#
+# Creates a new AFS volume on the given server and partition and mounts it
+# in the file system, setting default ACLs if appropriate.  It then calls
+# loadmtpt to update the mount point database.
 #
 # Written by Neil Crellin <neilc@stanford.edu>
 #        and Russ Allbery <rra@stanford.edu>
@@ -10,10 +14,6 @@ $ID = q($Id$ );
 #
 # This program is free software; you may redistribute it and/or modify it
 # under the same terms as Perl itself.
-#
-# Creates a new AFS volume on the given server and partition and mounts it
-# in the file system, setting default ACLs if appropriate.  It then calls
-# loadmtpt to update the mount point database.
 
 ##############################################################################
 # Site configuration
@@ -47,10 +47,10 @@ $VOS ||= '/usr/pubsw/bin/vos';
 # Modules and declarations
 ##############################################################################
 
-require 5.005;
+require 5.006;
 
 use strict;
-use vars qw($ACLS $CUTOFF $FS $ID $JUSTPRINT $LOADMTPT $SERVERS $VOS);
+use vars qw($ACLS $CUTOFF $FS $JUSTPRINT $LOADMTPT $SERVERS $VOS);
 use subs qw(system);
 
 use Getopt::Long qw(GetOptions);
@@ -352,14 +352,8 @@ if ($help) {
     print "Feeding myself to perldoc, please wait....\n";
     exec ('perldoc', '-t', $0) or die "Cannot fork: $!\n";
 } elsif ($version) {
-    my @version = split (' ', $ID);
-    shift @version if $ID =~ /^\$Id/;
-    my $version = join (' ', @version[0..2]);
-    $version =~ s/,v\b//;
-    $version =~ s/(\S+)$/($1)/;
-    $version =~ tr%/%-%;
-    print $version, "\n";
-    exit;
+    print "volcreate $VERSION\n";
+    exit 0;
 }
 if ($replicas && !$type) { die "-r option given without -t option\n" }
 if ($CUTOFF > 1 || $CUTOFF < 0) { die "-p value must be between 0 and 1\n" }
