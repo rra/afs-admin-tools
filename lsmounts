@@ -3,6 +3,10 @@ our $VERSION = '@VERSION@ @DATE@';
 #
 # lsmounts -- List mountpoints found in a directory.
 #
+# Takes a directory and finds all AFS mountpoints in that directory.  Note
+# that this will stat each file in the directory, so you probably don't want
+# to run it on root.afs.
+#
 # Written by Neil Crellin <neilc@stanford.edu>
 # Modifications by Russ Allbery <rra@stanford.edu>
 # Copyright 1998, 1999, 2003, 2004
@@ -10,10 +14,6 @@ our $VERSION = '@VERSION@ @DATE@';
 #
 # This program is free software; you may redistribute it and/or modify it
 # under the same terms as Perl itself.
-#
-# Takes a directory and finds all AFS mountpoints in that directory.  Note
-# that this will stat each file in the directory, so you probably don't want
-# to run it on root.afs.
 
 ##############################################################################
 # Site configuration
