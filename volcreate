@@ -36,12 +36,13 @@ $LOADMTPT ||= '/usr/bin/loadmtpt';
 # types.  See the documentation for its format.
 $SERVERS = '/afs/ir/service/afs/data/serverlist.types';
 
-# The full path to fs and vos.  Allow for Linux where the preferred location
-# may be on local disk.
-($FS)  = grep { -x $_ } qw(/usr/bin/fs /usr/afsws/bin/fs /usr/pubsw/bin/fs);
-$FS ||= '/usr/afsws/bin/fs';
-($VOS) = grep { -x $_ } qw(/usr/bin/vos /usr/pubsw/bin/vos);
-$VOS ||= '/usr/pubsw/bin/vos';
+# The full path to fs and vos.  Check various known paths first before falling
+# back on the user's PATH.
+($FS)  = grep { -x $_ } qw(/usr/bin/fs /usr/local/bin/fs);
+$FS ||= 'fs';
+($VOS) = grep { -x $_ }
+    qw(/usr/bin/vos /usr/sbin/vos /usr/local/bin/vos /usr/local/sbin/vos);
+$VOS ||= 'vos';
 
 ##############################################################################
 # Modules and declarations

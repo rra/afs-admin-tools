@@ -29,9 +29,10 @@ our $VERSION = '@VERSION@ @DATE@';
 $THRESH_EMPTY = 60;
 $THRESH_FULL  = 85;
 
-# The full path to vos.  Allow for Linux where the preferred location may be
-# on local disk.
-($VOS) = grep { -x $_ } qw(/usr/bin/vos /usr/pubsw/bin/vos);
+# The full path to vos.  Check various known paths first before falling back
+# on the user's PATH.
+($VOS) = grep { -x $_ }
+    qw(/usr/bin/vos /usr/sbin/vos /usr/local/bin/vos /usr/local/sbin/vos);
 $VOS ||= 'vos';
 
 # You may also want to tweak the width of the partition column in the output

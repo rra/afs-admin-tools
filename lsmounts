@@ -22,10 +22,10 @@ our $VERSION = '@VERSION@ @DATE@';
 # The full path to the loadmtpt utility.
 $LOADMTPT = '/afs/ir/service/afs/scripts/loadmtpt';
 
-# The full path to fs.  Allow for Linux where the preferred location may be on
-# local disk.
-($FS)  = grep { -x $_ } qw(/usr/bin/fs /usr/afsws/bin/fs /usr/pubsw/bin/fs);
-$FS ||= '/usr/afsws/bin/fs';
+# The full path to fs.  Check various known paths first before falling back on
+# the user's PATH.
+($FS) = grep { -x $_ } qw(/usr/bin/fs /usr/local/bin/fs);
+$FS ||= 'fs';
 
 ##############################################################################
 # Modules and declarations

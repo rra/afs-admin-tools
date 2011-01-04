@@ -35,9 +35,11 @@ use Getopt::Long qw(GetOptions);
 # a ratio of its total available space.
 $THRESHOLD = '0.90';
 
-# Find a usable version of vos.
-($VOS) = grep { -x $_ } qw(/usr/bin/vos /usr/pubsw/bin/vos);
-$VOS ||= '/usr/pubsw/bin/vos';
+# The full path to vos.  Check various known paths first before falling back
+# on the user's PATH.
+($VOS) = grep { -x $_ }
+    qw(/usr/bin/vos /usr/sbin/vos /usr/local/bin/vos /usr/local/sbin/vos);
+$VOS ||= 'vos';
 
 ##############################################################################
 # Overrides

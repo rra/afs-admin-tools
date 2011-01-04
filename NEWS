@@ -5,3 +5,8 @@ afs-admin-tools 2.0 (unreleased)
     Initial tarball release, based on frak 1.34, fsr 1.13, loadmtpt 1.18,
     lsmounts 1.8, mtpt 1.7, mvto 1.16, partinfo 1.2, volcreate 1.26,
     volcreate-logs 1.22, and volnuke 1.14.
+
+    Look for AFS utilities in /usr/bin and /usr/local/bin (and /usr/sbin
+    and /usr/local/sbin for vos) by default rather than checking
+    Stanford-specific paths, and always fall back on using the user's
+    PATH.

@@ -16,9 +16,9 @@ our $VERSION = '@VERSION@ @DATE@';
 # Site configuration
 ##############################################################################
 
-# The full path to fs.  Allow for Linux where the preferred location may be on
-# local disk.  Fall back to the user's path.
-($FS) = grep { -x $_ } qw(/usr/bin/fs /usr/afsws/bin/fs /usr/pubsw/bin/fs);
+# The full path to fs.  Check various known paths first before falling back on
+# the user's PATH.
+($FS) = grep { -x $_ } qw(/usr/bin/fs /usr/local/bin/fs);
 $FS ||= 'fs';
 
 ##############################################################################
