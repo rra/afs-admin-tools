@@ -98,11 +98,23 @@ REQUIREMENTS
 
 INSTALLATION
 
-  To install the scripts, just copy them to a directory on your PATH.
-  However, you should read the site configuration section at the beginning
+  First, you should read the site configuration section at the beginning
   of each script before you use it and adjust the configuration paths and
   settings there for your site.  Many of the scripts come with settings
   that are somewhat Stanford-specific.
+
+  Then, follow the standard installation procedures for Perl modules,
+  which is to type the following commands:
+
+      perl Makefile.PL
+      make
+      make install
+
+  You'll probably need to do the "make install" as root.
+
+  For the time being, you could instead just copy the scripts you want to
+  use to a directory on your PATH.  However, future releases will probably
+  move some shared code to a supporting Perl module.
 
 HOMEPAGE AND SOURCE REPOSITORY
 
