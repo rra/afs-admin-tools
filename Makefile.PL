@@ -12,8 +12,8 @@ WriteMakefile (
     ($] >= 5.005 ?
      (ABSTRACT   => 'Utilities for AFS management',
       AUTHOR     => 'Russ Allbery (rra@stanford.edu)') : ()),
-    EXE_FILES    => [ qw(frak fsr loadmtpt lsmounts mtpt mvto partinfo
-                         volcreate volcreate-logs volnuke) ],
+    EXE_FILES    => [ qw(frak fsr lsmounts mvto partinfo volcreate
+                         volcreate-logs volnuke) ],
     ($] >= 5.010 ?
      (LICENSE    => 'perl') : ()),
     VERSION_FROM => 'VERSION',

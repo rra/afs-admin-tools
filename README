@@ -13,10 +13,9 @@ BLURB
   afs-admin-tools provides a collection of additional utilities to help
   ease administration of AFS servers, volumes, and directory ACLs.  It
   includes scripts to report the differences between read-only and
-  read/write volumes; make all fs commands recursive; discover, record,
-  and query the mount points for volumes; create, delete, and move volumes
-  more easily than with vos alone; and report AFS server partition usage
-  in a more readable form.
+  read/write volumes; make all fs commands recursive; create, delete, and
+  move volumes more easily than with vos alone; and report AFS server
+  partition usage in a more readable form.
 
 DESCRIPTION
 
@@ -37,11 +36,6 @@ DESCRIPTION
   act on files or directories into recursive commands.  It can be
   configured to cross or not cross mount points.  It's primarily useful
   with setacl but is occasionally useful with other commands.
-
-  loadmtpt and mtpt record the mount point for a volume using a remctl
-  call to a server and query that server for a volume mount point.  They
-  require running a remctl server and a database to record the mount
-  points.  The server component is available in the afs-backend package.
 
   lsmounts recursively searches through an AFS volume and finds and
   reports on mount points.  It can optionally traverse mount points as
