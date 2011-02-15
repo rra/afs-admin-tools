@@ -6,7 +6,7 @@ our $VERSION = '@VERSION@ @DATE@';
 # Takes an AFS server as an argument and then runs vos partinfo on it,
 # parsing the output and producing a slightly more verbose report that
 # includes percent full on each partition and how much more data can be
-# added to that partition before putting it over 85% full.
+# added to that partition before putting it over 90% full.
 #
 # Written by Neil Crellin <neilc@stanford.edu>
 # Modifications by Russ Allbery <rra@stanford.edu>
@@ -24,10 +24,10 @@ our $VERSION = '@VERSION@ @DATE@';
 # is considered reasonably well-utilized, and defaults to 60%.  The second
 # gives the threshold before the partition is considered full (and also
 # determines how much space is shown as available in the last column of the
-# report).  It defaults to 85%.  These are used for colorizing the output and
+# report).  It defaults to 90%.  These are used for colorizing the output and
 # can be overridden with the -T command-line option.
 $THRESH_EMPTY = 60;
-$THRESH_FULL  = 85;
+$THRESH_FULL  = 90;
 
 # The full path to vos.  Check various known paths first before falling back
 # on the user's PATH.
@@ -194,7 +194,7 @@ the server name.
 
 Use color to highlight interesting data.  Currently this just means that the
 percent full column will be shown in green for partitions under 60% full and
-in red for partitions over 85% full.  Using this option requires that the
+in red for partitions over 90% full.  Using this option requires that the
 Term::ANSIColor module be installed and available on the user's system (this
 module is not required if B<-c> is not used).
 
@@ -219,7 +219,7 @@ Print totals for the entire server.
 =item B<--thresholds>=I<empty>,I<full>
 
 Override the default thresholds of 60% (before which a partition will be
-considered mostly empty) and 85% (after which the partition will be
+considered mostly empty) and 90% (after which the partition will be
 considered full).  B<-T> should take two integers between 0 and 100
 separated by a comma.
 
