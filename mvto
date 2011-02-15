@@ -733,9 +733,9 @@ Do the same for every volume listed in the file F<evacuate>:
 
 Move every volume in the file F<locations> to the locations specified on
 that line of the file, aborting if moving a volume would bring any partition
-to over 85% full:
+to over 90% full:
 
-    mvto -t 0.85 -L locations
+    mvto -t 0.90 -L locations
 
 =head1 BUGS
 
