@@ -6,7 +6,7 @@ our $VERSION = '@VERSION@ @DATE@';
 # Written by Carol Oliver
 # Portions by Russ Allbery <rra@stanford.edu>
 # Inspired by a script written by Larry Schwimmer
-# Copyright 1999, 2004, 2006, 2007, 2008, 2010
+# Copyright 1999, 2004, 2006, 2007, 2008, 2010, 2011
 #     Board of Trustees, Leland Stanford Jr. University
 #
 # This program is free software; you may redistribute it and/or modify it
@@ -270,12 +270,31 @@ die "Usage: $0 [-hMmVv] <fs-command> [<fs-options>]\n" unless @ARGV;
 # should occur before the directory, the second contains the set of
 # directories to operate on, and the third contains all the options that
 # should occur after the directory.
+#
+# We then process this list and warn about any non-existent files or arguments
+# that are not directories.  This is not the default fs behavior, which
+# usually is willing to operate on files as well, but otherwise we quietly do
+# nothing since our recursion requires directories.
 my ($head, $dirs, $tail) = parse_fs_command (@ARGV);
+my %remove;
+for my $dir (@$dirs) {
+    if (-l $dir) {
+        warn "$0: skipping symlink $dir\n";
+        $remove{$dir} = 1;
+    } elsif (!-e $dir) {
+        warn "$0: skipping non-existent directory $dir\n";
+        $remove{$dir} = 1;
+    } elsif (!-d $dir) {
+        warn "$0: skipping non-directory $dir\n";
+        $remove{$dir} = 1;
+    }
+}
+@$dirs = grep { !$remove{$_} } @$dirs;
 
 # If -M was used, we need to filter out any mount points or non-directories
 # from the set of directories provided.
 if ($nomounts) {
-    @$dirs = grep { !-l $_ && -d _ && !ismount ($_) } @$dirs;
+    @$dirs = grep { !ismount ($_) } @$dirs;
 }
 die "$0: no directories to process\n" unless @$dirs;
 
@@ -307,14 +326,20 @@ C<setquota>, and C<whereis>.  All aliases for those commands are also
 supported.
 
 To apply an B<fs> command recursively, just run B<fsr> instead of B<fs>,
-leaving all of the other options and command ordering the same.  To use any
-of the options specific to B<fsr>, give them immediately after C<fsr> on the
-command line and before the B<fs> subcommand.
+leaving all of the other options and command ordering the same, with one
+exception: all of the directory arguments must actually be directories.
+Some B<fs> commands will take files as arguments and operate on the
+directory containing that file, but B<fsr> will warn about and skip any
+arguments that are not directories.  To use any of the options specific to
+B<fsr>, give them immediately after C<fsr> on the command line and before
+the B<fs> subcommand.
 
-Note that for C<copyacl>, only the target directory will be recursive.  In
+Note that for C<copyacl> only the target directory will be recursive.  In
 other words, B<fsr> will let you copy the ACLs from a single directory to
 every directory in a target tree, but won't let you copy ACLs from one
-directory hierarchy to another matching hierarchy.
+directory hierarchy to another matching hierarchy.  To copy a tree of
+files including ACLs, consider the B<up> command (which may be installed
+on your system as B<afs-up>).
 
 Run C<fs help> for more usage information for B<fs>.
 
@@ -379,6 +404,9 @@ points:
 
     fsr -M sa -dir * -acl personX read
 
+If there are files in the current directory that are not directories, this
+command will warn about and ignore those files.
+
 =head1 NOTES
 
 B<fsr> ignores symlinks.
@@ -397,8 +425,8 @@ script written by Larry Schwimmer.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 1999, 2004, 2006, 2007, 2008, 2010 Board of Trustees, Leland
-Stanford Jr. University.
+Copyright 1999, 2004, 2006, 2007, 2008, 2010, 2011 The Board of Trustees
+of the Leland Stanford Junior University.
 
 This program is free software; you may redistribute it and/or modify it
 under the same terms as Perl itself.
