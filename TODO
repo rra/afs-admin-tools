@@ -1,0 +1,13 @@
+                        afs-admin-tools To-Do List
+
+volcreate:
+
+ * This currently enforces a Stanford-specific restriction of mount points
+   starting with /afs/.ir/.  It should instead canonicalize mount points
+   to something appropriate for the local cell.  (Perhaps require the RW
+   version of a fully-qualified cell name?)  The restriction should also
+   be conditional on loadmtpt support being enabled.
+
+volcreate-logs:
+
+ * Remove Kerberos v4 support.
