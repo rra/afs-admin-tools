@@ -12,11 +12,29 @@ our $VERSION = '@VERSION@ @DATE@';
 #
 # Written by Russ Allbery <rra@stanford.edu>
 # Based on code by Neil Crellin <neilc@stanford.edu>
-# Copyright 1998, 1999, 2001, 2003, 2004, 2005, 2006
+# Copyright 1998, 1999, 2001, 2003, 2004, 2005, 2006, 2011
 #    The Board of Trustees of the Leland Stanford Junior University
 #
 # This program is free software; you may redistribute it and/or modify it
 # under the same terms as Perl itself.
+
+##############################################################################
+# Site configuration
+##############################################################################
+
+# The threshold up to which mvto is willing to fill a partition, expressed as
+# a ratio of its total available space.
+our $THRESHOLD = '0.90';
+
+# The full path to vos.  vos may be in an sbin directory, which may not be on
+# the user's path by default, so check there first.
+our $VOS = grep { -x $_ } qw(/usr/local/sbin/vos /usr/sbin/vos);
+$VOS ||= 'vos';
+
+# Load the configuration file if it exists.
+if (-f '/etc/afs-admin-tools/config') {
+    require '/etc/afs-admin-tools/config';
+}
 
 ##############################################################################
 # Modules and declarations
@@ -25,21 +43,11 @@ our $VERSION = '@VERSION@ @DATE@';
 require 5.006;
 
 use strict;
-use vars qw($JUSTPRINT $THRESHOLD $VOS);
+use vars qw($JUSTPRINT);
 use subs qw(system);
 
 use Date::Parse qw(str2time);
 use Getopt::Long qw(GetOptions);
-
-# The threshold up to which mvto is willing to fill a partition, expressed as
-# a ratio of its total available space.
-$THRESHOLD = '0.90';
-
-# The full path to vos.  Check various known paths first before falling back
-# on the user's PATH.
-($VOS) = grep { -x $_ }
-    qw(/usr/bin/vos /usr/sbin/vos /usr/local/bin/vos /usr/local/sbin/vos);
-$VOS ||= 'vos';
 
 ##############################################################################
 # Overrides
@@ -95,10 +103,10 @@ sub findpartition {
 # Get the available space on one particular AFS partition, used as a safeguard
 # to make sure that we don't move a volume to somewhere where there isn't
 # sufficient space.  Returns the space available before the partition reaches
-# $THRESHOLD.
+# $MVTO_THRESHOLD.
 sub available_space {
     my ($server, $partition) = @_;
-    return if $THRESHOLD >= 1.0;
+    return if $MVTO_THRESHOLD >= 1.0;
     open (INFO, "$VOS partinfo $server $partition |")
         or die "$0: can't fork: $!\n";
     local $_;
@@ -106,7 +114,7 @@ sub available_space {
         if (m%^Free space on \S+ \S+: (\d+) K blocks out of total (\d+)%) {
             my ($free, $total) = ($1, $2);
             close INFO;
-            return ($free - $total * (1 - $THRESHOLD));
+            return ($free - $total * (1 - $MVTO_THRESHOLD));
         } else {
             die "$0: vos partinfo said $_";
         }
@@ -454,7 +462,7 @@ GetOptions ('f|force'              => \$force,
             'L|location-list=s'    => \$location,
             'n|dry-run|just-print' => \$JUSTPRINT,
             's|single'             => \$single,
-            't|threshold=f'        => \$THRESHOLD,
+            't|threshold=f'        => \$MVTO_THRESHOLD,
             'v|version'            => \$version) or exit 1;
 if ($help) {
     print "Feeding myself to perldoc, please wait....\n";
@@ -553,64 +561,64 @@ the volume is currently located and how it is currently replicated.  It
 essentially allows the user to say "make the volume distribution look like
 this" and it will make the changes necessary to do that.  For replicated
 volumes, the first server/partition pair is taken as the location of the
-read/write and every additional server/partition pair is taken as a site to
-put a replica.  (One replica is automatically put on the same partition as
-the read/write, if any replication sites are specified, so the result will
-be a replication site on every server/partition pair given.)
+read/write and every additional server/partition pair is taken as a site
+to put a replica.  (One replica is automatically put on the same partition
+as the read/write, if any replication sites are specified, so the result
+will be a replication site on every server/partition pair given.)
 
-B<mvto> will check the available space on the partition to which a volume is
-being moved and any partitions where replicas are being added and will
+B<mvto> will check the available space on the partition to which a volume
+is being moved and any partitions where replicas are being added and will
 decline to do anything if its operation would take that partition over 90%
 full.  This threshold can be changed with the B<-t> option.
 
-If the volume is replicated and is already located on the same server as the
-destination, even if it's on a different partition, this is considered by
-B<mvto> to be "good enough" and the volume will not be moved.  Similarly
-with replication sites, if there is already a replication site on that
-server (even on a different partition), that replication site won't be moved
-or removed and will be counted as one of the replication sites for the
-volume.  To move replicated volumes between partitions on the same server
-requires more finesse and special cases since one cannot have two replicas
-on the same server, so it should be done by hand.
+If the volume is replicated and is already located on the same server as
+the destination, even if it's on a different partition, this is considered
+by B<mvto> to be "good enough" and the volume will not be moved.
+Similarly with replication sites, if there is already a replication site
+on that server (even on a different partition), that replication site
+won't be moved or removed and will be counted as one of the replication
+sites for the volume.  To move replicated volumes between partitions on
+the same server requires more finesse and special cases since one cannot
+have two replicas on the same server, so it should be done by hand.
 
 If any details about the replication of the volume had to be changed (and
 the volume is replicated), the volume will be released.  In practice, this
 means that unless the volume is already located on all of the same servers
 given on the command line, already has a replication site on the same
-partition as the read/write, and already has the right number of replication
-sites, the volume will be released if replicated.
+partition as the read/write, and already has the right number of
+replication sites, the volume will be released if replicated.
 
-If the volume needs to be released, B<mvto> will check to see if it has any
-unreleased changes.  If so, it will refuse to perform any operations unless
-the B<--force> (or B<-f>) command-line option is given to avoid accidentally
-releasing volumes with unreleased changes.  Don't rely on this check
-completely, since the volume could be modified between when B<mvto> checks
-and when it actually releases the volume.
+If the volume needs to be released, B<mvto> will check to see if it has
+any unreleased changes.  If so, it will refuse to perform any operations
+unless the B<--force> (or B<-f>) command-line option is given to avoid
+accidentally releasing volumes with unreleased changes.  Don't rely on
+this check completely, since the volume could be modified between when
+B<mvto> checks and when it actually releases the volume.
 
-If the read/write volume has to be moved, B<mvto> will run B<vos backup> on
-the volume after the move (since volume moves have a side effect of deleting
-the backup volume).  Don't use this program on volumes that shouldn't have a
-backup volume.
+If the read/write volume has to be moved, B<mvto> will run B<vos backup>
+on the volume after the move (since volume moves have a side effect of
+deleting the backup volume).  Don't use this program on volumes that
+shouldn't have a backup volume.
 
-B<mvto> will neither increase nor decrease the replication of a volume.  If
-the number of replication sites should be changed, or if the volume is
-currently unreplicated and should be replicated, this should be done by hand
-before running B<mvto>, using B<vos addsite> and B<vos remove>.
+B<mvto> will neither increase nor decrease the replication of a volume.
+If the number of replication sites should be changed, or if the volume is
+currently unreplicated and should be replicated, this should be done by
+hand before running B<mvto>, using B<vos addsite> and B<vos remove>.
 
-AFS servers may be specified as just a number; all numeric server names will
-have C<afssvr> prepended to them.
+AFS servers may be specified as just a number; all numeric server names
+will have C<afssvr> prepended to them.
 
-As with all AFS commands, partitions may be specified as a simple letter, as
-C<vicepX>, or as C</vicepX>.  More than 26 partitions on one server is not
-supported.  Partitions may also be specified as C<.>, in which case the
-parition on that server with the most free space according to B<vos
+As with all AFS commands, partitions may be specified as a simple letter,
+as C<vicepX>, or as C</vicepX>.  More than 26 partitions on one server is
+not supported.  Partitions may also be specified as C<.>, in which case
+the parition on that server with the most free space according to B<vos
 partinfo> is chosen, or as a string of letters and letter ranges such as
 C<ace-gm>, in which case the partition of the set specified with the most
 free space is chosen.  (In this example, the set is /vicepa, /vicepc,
 /vicepe through /vicepg, or /vicepm on the given sever.)
 
-B<mvto> passes the verbose flag to most B<vos> commands it runs, and passes
-the B<-f> flag to B<vos release>.
+B<mvto> passes the verbose flag to most B<vos> commands it runs, and
+passes the B<-f> flag to B<vos release>.
 
 =head1 OPTIONS
 
@@ -618,8 +626,8 @@ the B<-f> flag to B<vos release>.
 
 =item B<-h>, B<--help>
 
-Print out this documentation (which is done simply by feeding the script to
-C<perldoc -t>).
+Print out this documentation (which is done simply by feeding the script
+to C<perldoc -t>).
 
 =item B<-f>, B<--force>
 
@@ -629,11 +637,11 @@ volume that has unreleased changes.
 
 =item B<-l> I<list>, B<--list>=I<list>
 
-Rather than take a single volume name on the command line, read in a list of
-volumes to act on from the file I<list>.  I<list> should contain a simple
-list of AFS volume names, one per line, and each volume will be moved as if
-it were specified on the B<mvto> command line, using the location
-information given on the command line.
+Rather than take a single volume name on the command line, read in a list
+of volumes to act on from the file I<list>.  I<list> should contain a
+simple list of AFS volume names, one per line, and each volume will be
+moved as if it were specified on the B<mvto> command line, using the
+location information given on the command line.
 
 =item B<-L> I<list>, B<--location-list>=I<list>
 
@@ -654,29 +662,29 @@ would be equivalent to running the two commands:
     mvto user.rra afssvr12 .
     mvto user.neilc afssvr10 e
 
-Command-line arguments cannot be given in the I<list> file, only server and
-partition information.  The B<-s> flag may still be given on the command
-line and will affect how the location information in the I<list> file is
-interpreted.
+Command-line arguments cannot be given in the I<list> file, only server
+and partition information.  The B<-s> flag may still be given on the
+command line and will affect how the location information in the I<list>
+file is interpreted.
 
 =item B<-n>, B<--dry-run>, B<--just-print>
 
-Print out volume status information and the commands that B<mvto> would run,
-but don't execute any of them.
+Print out volume status information and the commands that B<mvto> would
+run, but don't execute any of them.
 
 =item B<-s>, B<--single>
 
 Rather than being a complete specification of the location at which the
 volume should be put, the command-line arguments are taken to be two
-server/partition pairs.  The first is the current location of a site of the
-volume (either a replica or the read/write with its replica), and the second
-pair is the location to move that site to.
+server/partition pairs.  The first is the current location of a site of
+the volume (either a replica or the read/write with its replica), and the
+second pair is the location to move that site to.
 
-This allows B<mvto> to be used to evacuate a single replication site server
-without having to know where the other sites for each of those volumes are
-located, while still taking advantage of B<mvto>'s understanding of B<vos
-release>, creation of backup volumes, keeping a replica with the read/write
-volume, and so forth.
+This allows B<mvto> to be used to evacuate a single replication site
+server without having to know where the other sites for each of those
+volumes are located, while still taking advantage of B<mvto>'s
+understanding of B<vos release>, creation of backup volumes, keeping a
+replica with the read/write volume, and so forth.
 
 It generally doesn't make any sense to use this option with unreplicated
 volumes unless it's used in conjunction with B<-L> with mixed RO and RW
@@ -686,14 +694,51 @@ volume alone.
 
 =item B<-t> I<threshold>, B<--threshold>=I<threshold>
 
-The safety threshold.  B<mvto> will not move a volume or add a replica to a
-partition if by doing so it would increase the usage of that partition above
-this treshold (specified as a ratio of used space to total space).  The
-default is 0.9 (90% full).  To disable this safety check, use C<-t 1.0>.
+The safety threshold.  B<mvto> will not move a volume or add a replica to
+a partition if by doing so it would increase the usage of that partition
+above this treshold (specified as a ratio of used space to total space).
+The default is 0.9 (90% full).  To disable this safety check, use C<-t
+1.0>.
 
 =item B<-v>, B<--version>
 
 Print out the version of B<mvto> and exit.
+
+=back
+
+=head1 CONFIGURATION
+
+B<mvto> loads configuration settings from F</etc/afs-admin-tools/config>
+if that file exists.  If it exists, it must be Perl code suitable for
+loading with C<require>.  This means that each line of the configuration
+file should be of the form:
+
+    our $VARIABLE = VALUE;
+
+where C<$VARIABLE> is the configuration variable being set and C<VALUE> is
+the value to set it to (which should be enclosed in quotes if it's not a
+number).  The file should end with:
+
+    1;
+
+so that Perl knows the file was loaded correctly.
+
+The supported configuration variables are:
+
+=over 4
+
+=item $MVTO_THRESHOLD
+
+The threshold up to which B<mvto> is willing to fill a partition,
+expressed as a ratio of its total available space.  The default value is
+0.9, meaning that B<mvto> will fill a partition up to 90% full.  This
+setting is overridden by the B<-t> command-line option.
+
+=item $VOS
+
+The full path to the AFS B<vos> utility.  If this variable is not set,
+B<mvto> defaults to F</usr/local/sbin/vos> or F</usr/sbin/vos> if they
+exist, and otherwise looks for B<vos> on the user's PATH.
 
 =back
 
@@ -715,15 +760,16 @@ it has unreleased changes.
 
     mvto -f pubsw 10 . 11 a-c
 
-Move all of the volumes in the file F<evacuate> to the most empty partition
-on afssvr9.  Note that the check for the most empty partition is done anew
-for each individual volume move, so the volumes will be spread out across
-the server.
+Move all of the volumes in the file F<evacuate> to the most empty
+partition on afssvr9.  Note that the check for the most empty partition is
+done anew for each individual volume move, so the volumes will be spread
+out across the server.
 
     mvto -l evacuate afssvr9 .
 
-For the volume pubsw, move only the site (whether a replica or a read/write
-with replica) on afssvr10 a to the most empty partition on afssvr11:
+For the volume pubsw, move only the site (whether a replica or a
+read/write with replica) on afssvr10 a to the most empty partition on
+afssvr11:
 
     mvto -s pubsw afssvr10 /vicepa 11 .
 
@@ -732,17 +778,17 @@ Do the same for every volume listed in the file F<evacuate>:
     mvto -l evacuate -s 10 vicepa 11 .
 
 Move every volume in the file F<locations> to the locations specified on
-that line of the file, aborting if moving a volume would bring any partition
-to over 90% full:
+that line of the file, aborting if moving a volume would bring any
+partition to over 90% full:
 
     mvto -t 0.90 -L locations
 
 =head1 BUGS
 
-If a replicated volume has no RO replica on the same server as its RW site,
-moving the RW site with C<mvto -s> will increase the replication of the
-volume by adding a new RO site at the destination for the RW site without
-removing one of the other RO sites.
+If a replicated volume has no RO replica on the same server as its RW
+site, moving the RW site with C<mvto -s> will increase the replication of
+the volume by adding a new RO site at the destination for the RW site
+without removing one of the other RO sites.
 
 =head1 AUTHORS
 
@@ -751,18 +797,19 @@ Crellin <neilc@stanford.edu> that only handled unreplicated volumes.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 1998, 1999, 2001, 2003, 2004, 2005 Board of Trustees, Leland
-Stanford Jr. University.
+Copyright 1998, 1999, 2001, 2003, 2004, 2005, 2011 The Board of Trustees of
+the Leland Stanford Junior University.
 
 This program is free software; you may redistribute it and/or modify it
 under the same terms as Perl itself.
 
 =head1 SEE ALSO
 
-vos(1), vos_addsite(1), vos_backup(1), vos_examine(1), vos_move(1),
-vos_release(1), vos_remove(1)
+L<vos(1)>, L<vos_addsite(1)>, L<vos_backup(1)>, L<vos_examine(1)>,
+L<vos_move(1)>, L<vos_release(1)>, L<vos_remove(1)>
 
-The current version of this program is available from its web page at
-L<http://www.eyrie.org/~eagle/software/mvto/>.
+This script is part of the afs-admin-tools package.  The most recent
+version is available from the afs-admin-tools web page at
+L<http://www.eyrie.org/~eagle/software/afs-admin-tools/>.
 
 =cut

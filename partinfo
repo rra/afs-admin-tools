@@ -10,7 +10,7 @@ our $VERSION = '@VERSION@ @DATE@';
 #
 # Written by Neil Crellin <neilc@stanford.edu>
 # Modifications by Russ Allbery <rra@stanford.edu>
-# Copyright 1998, 1999, 2003, 2004
+# Copyright 1998, 1999, 2003, 2004, 2011
 #     The Board of Trustees of the Leland Stanford Junior University
 #
 # This program is free software; you may redistribute it and/or modify it
@@ -26,14 +26,18 @@ our $VERSION = '@VERSION@ @DATE@';
 # determines how much space is shown as available in the last column of the
 # report).  It defaults to 90%.  These are used for colorizing the output and
 # can be overridden with the -T command-line option.
-$THRESH_EMPTY = 60;
-$THRESH_FULL  = 90;
+our $PARTINFO_EMPTY = 60;
+our $PARTINFO_FULL  = 90;
 
-# The full path to vos.  Check various known paths first before falling back
-# on the user's PATH.
-($VOS) = grep { -x $_ }
-    qw(/usr/bin/vos /usr/sbin/vos /usr/local/bin/vos /usr/local/sbin/vos);
+# The full path to vos.  vos may be in an sbin directory, which may not be on
+# the user's path by default, so check there first.
+our $VOS = grep { -x $_ } qw(/usr/local/sbin/vos /usr/sbin/vos);
 $VOS ||= 'vos';
+
+# Load the configuration file if it exists.
+if (-f '/etc/afs-admin-tools/config') {
+    require '/etc/afs-admin-tools/config';
+}
 
 # You may also want to tweak the width of the partition column in the output
 # if you use machine names of a different length.  Search for %17s below.
@@ -43,7 +47,6 @@ $VOS ||= 'vos';
 ##############################################################################
 
 use strict;
-use vars qw($THRESH_EMPTY $THRESH_FULL $VOS);
 
 use Getopt::Long qw(GetOptions);
 
@@ -57,10 +60,10 @@ use Getopt::Long qw(GetOptions);
 # Given the percentage of free space on a partition, return the color string
 # to use for that partition.  Uses the $THRESH_* global variables, which can
 # be overridden with -T.
-sub color {
+sub choose_color {
     my ($pfree) = @_;
-    if    ($pfree < $THRESH_EMPTY) { return Term::ANSIColor::color ('green') }
-    elsif ($pfree > $THRESH_FULL)  { return Term::ANSIColor::color ('red')   }
+    if    ($pfree < $PARTINFO_EMPTY) { return color ('green') }
+    elsif ($pfree > $PARTINFO_FULL)  { return color ('red')   }
     else { return '' }
 }
 
@@ -76,10 +79,10 @@ sub heading {
 sub show {
     my ($partition, $total, $free, $color) = @_;
     my $used = $total - $free;
-    my $usable = int ($free - ((100 - $THRESH_FULL) / 100) * $total);
+    my $usable = int ($free - ((100 - $PARTINFO_FULL) / 100) * $total);
     my $pfree = 100 * $used / $total;
-    my $cstart = $color ? color ($pfree) : '';
-    my $cend = $color ? Term::ANSIColor::color ('reset') : '';
+    my $cstart = $color ? choose_color ($pfree) : '';
+    my $cend = $color ? color ('reset') : '';
     printf "%17s: %10d %10d %10d %s%7.2f%%%s %10d\n",
         $partition, $total, $used, $free, $cstart, $pfree, $cend, $usable;
 }
@@ -106,7 +109,10 @@ if ($help) {
     print "partinfo $VERSION\n";
     exit 0;
 }
-require Term::ANSIColor if $color;
+if ($color) {
+    require Term::ANSIColor;
+    Term::ANSIColor->import ('color');
+}
 die "Usage: $0 [-chqtv] [-T <empty>,<full>] <afssvr>\n" if (@ARGV != 1);
 my $server = shift;
 $server = 'afssvr' . $server if ($server =~ /^\d+$/);
@@ -115,7 +121,7 @@ $server = 'afssvr' . $server if ($server =~ /^\d+$/);
 if ($thresholds) {
     die "$0: argument to -T must be two numbers 0-100 separated by a comma\n"
         unless ($thresholds =~ /^(\d{1,2}|100),(\d{1,2}|100)$/);
-    ($THRESH_EMPTY, $THRESH_FULL) = ($1, $2);
+    ($PARTINFO_EMPTY, $PARTINFO_FULL) = ($1, $2);
 }
 
 # Run vos partinfo and parse the output.  Print out a line for each partition,
@@ -160,28 +166,28 @@ partinfo [B<-chqtv>] [-T <empty>,<full>] I<afssvr>
 
 =head1 DESCRIPTION
 
-B<partinfo> does a vos partinfo on a particular AFS server to determine the
-amount of used and free space.  Unlike vos partinfo, however, it also
+B<partinfo> does a vos partinfo on a particular AFS server to determine
+the amount of used and free space.  Unlike vos partinfo, however, it also
 formats the output into a more easily readable tabular form, displays the
 total disk space, the used disk space, and the free disk space, calculates
 what percent full the partition is, and displays the amount that can still
 be put on the partition before it goes over a particular threshold.
 
-Normally, B<partinfo> displays a header above the output giving the meaning
-of the columns, but this can optionally be suppressed.  B<partinfo> can also
-optionally use color to highlight partitions with plenty of free space and
-partitions that are too full.
+Normally, B<partinfo> displays a header above the output giving the
+meaning of the columns, but this can optionally be suppressed.
+B<partinfo> can also optionally use color to highlight partitions with
+plenty of free space and partitions that are too full.
 
 There are two thresholds that B<partinfo> cares about.  The first is the
-threshold before which the partition will be considered to be mostly empty.
-This will only change the output if color is requested with B<-c>; if it is,
-the partition will be shown in green.  It defaults to 60%.  The second is
-the threshold after which the partition will be considered full.  The final
-column, available space, is the amount of space remaining on the partition
-before it goes over this threshold, and partitions over this threshold will
-be shown in red if color is requested with B<-c>.  The thresholds may be
-changed at the top of this script or overridden for one invocation with
-B<-T>.
+threshold before which the partition will be considered to be mostly
+empty.  This will only change the output if color is requested with B<-c>;
+if it is, the partition will be shown in green.  It defaults to 60%.  The
+second is the threshold after which the partition will be considered full.
+The final column, available space, is the amount of space remaining on the
+partition before it goes over this threshold, and partitions over this
+threshold will be shown in red if color is requested with B<-c>.  The
+thresholds may be changed at the top of this script or overridden for one
+invocation with B<-T>.
 
 If the server given is just a number, C<afssvr> will be prepended to form
 the server name.
@@ -192,23 +198,23 @@ the server name.
 
 =item B<-c>, B<--color>
 
-Use color to highlight interesting data.  Currently this just means that the
-percent full column will be shown in green for partitions under 60% full and
-in red for partitions over 90% full.  Using this option requires that the
-Term::ANSIColor module be installed and available on the user's system (this
-module is not required if B<-c> is not used).
+Use color to highlight interesting data.  Currently this just means that
+the percent full column will be shown in green for partitions under 60%
+full and in red for partitions over 90% full.  Using this option requires
+that the Term::ANSIColor module be installed and available on the user's
+system (this module is not required if B<-c> is not used).
 
 To override the above thresholds, see the B<-T> option.
 
 =item B<-h>, B<--help>
 
-Print out this documentation (which is done simply by feeding the script to
-C<perldoc -t>).
+Print out this documentation (which is done simply by feeding the script
+to C<perldoc -t>).
 
 =item B<-q>, B<--quiet>
 
-Suppress the header normally printed to explain the meanings of each column
-of data.
+Suppress the header normally printed to explain the meanings of each
+column of data.
 
 =item B<-t>, B<--total>
 
@@ -229,6 +235,47 @@ Print out the version of B<partinfo> and exit.
 
 =back
 
+=head1 CONFIGURATION
+
+B<partinfo> loads configuration settings from
+F</etc/afs-admin-tools/config> if that file exists.  If it exists, it must
+be Perl code suitable for loading with C<require>.  This means that each
+line of the configuration file should be of the form:
+
+    our $VARIABLE = VALUE;
+
+where C<$VARIABLE> is the configuration variable being set and C<VALUE> is
+the value to set it to (which should be enclosed in quotes if it's not a
+number).  The file should end with:
+
+    1;
+
+so that Perl knows the file was loaded correctly.
+
+The supported configuration variables are:
+
+=over 4
+
+=item $PARTINFO_EMPTY
+
+=item $PARTINFO_FULL
+
+The default thresholds.  The first gives the threshold before the
+partition is considered reasonably well-utilized, and defaults to 60%.
+The second gives the threshold before the partition is considered full
+(and also determines how much space is shown as available in the last
+column of the report).  It defaults to 90%.  These are used for colorizing
+the output (with the B<-c> option) and can be overridden with the B<-T>
+command-line option.
+
+=item $VOS
+
+The full path to the AFS B<vos> utility.  If this variable is not set,
+B<partinfo> defaults to F</usr/local/sbin/vos> or F</usr/sbin/vos> if they
+exist, and otherwise looks for B<vos> on the user's PATH.
+
+=back
+
 =head1 EXAMPLES
 
 The following command shows the current status of afssvr1:
@@ -244,29 +291,30 @@ This command does the same for afssvr5:
 
     partinfo --color --quiet afssvr5
 
-Use thresholds of 70% and 90% instead, showing the results in color:
+Use thresholds of 70% and 95% instead, showing the results in color:
 
-    partinfo -T 70,90 -c afssvr5
+    partinfo -T 70,95 -c afssvr5
+
+=head1 AUTHORS
+
+Original Perl script written by Neil Crellin <neilc@stanford.edu>,
+modified by Russ Allbery <rra@stanford.edu> to use formats, to include an
+explanatory header, to use color if wanted, and to add optional totals.
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 1998, 1999, 2003, 2004, 2011 The Board of Trustees of the Leland
+Stanford Junior University.
+
+This program is free software; you may redistribute it and/or modify it
+under the same terms as Perl itself.
 
 =head1 SEE ALSO
 
 L<vos(1)>, L<vos_partinfo(1)>
 
-L<http://www.eyrie.org/~eagle/software/partinfo/> will have the current
-version of this program.
-
-=head1 AUTHORS
-
-Original Perl script written by Neil Crellin <neilc@stanford.edu>, modified
-by Russ Allbery <rra@stanford.edu> to use formats, to include an explanatory
-header, to use color if wanted, and to add optional totals.
-
-=head1 COPYRIGHT AND LICENSE
-
-Copyright 1998, 1999, 2003, 2004 Board of Trustees, Leland Stanford
-Jr. University.
-
-This program is free software; you may redistribute it and/or modify it
-under the same terms as Perl itself.
+This script is part of the afs-admin-tools package.  The most recent
+version is available from the afs-admin-tools web page at
+L<http://www.eyrie.org/~eagle/software/afs-admin-tools/>.
 
 =cut

@@ -6,7 +6,10 @@ afs-admin-tools 2.0 (unreleased)
     mvto 1.17, partinfo 1.3, volcreate 1.26, volcreate-logs 1.22, and
     volnuke 1.15.
 
-    Look for AFS utilities in /usr/bin and /usr/local/bin (and /usr/sbin
-    and /usr/local/sbin for vos) by default rather than checking
-    Stanford-specific paths, and always fall back on using the user's
-    PATH.
+    All utilities now load /etc/afs-admin-tools/config if it exists and
+    honor configuration variables set there.  All utilities now document
+    their supported configuration variables.
+
+    Look for AFS utilities on the user's PATH by default, except for vos
+    where /usr/local/sbin and /usr/sbin are checked first (since those
+    directories may not be on the PATH).

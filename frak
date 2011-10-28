@@ -11,7 +11,7 @@ our $VERSION = '@VERSION@ @DATE@';
 #
 # Written by Neil Crellin <neilc@stanford.edu>
 # Updated by Russ Allbery <rra@stanford.edu>
-# Copyright 1998, 1999, 2004
+# Copyright 1998, 1999, 2004, 2011
 #     The Board of Trustees of the Leland Stanford Junior University
 #
 # This program is free software; you may redistribute it and/or modify it
@@ -21,19 +21,22 @@ our $VERSION = '@VERSION@ @DATE@';
 # Site configuration
 ##############################################################################
 
-# The full path to a suitable diff that supports -u.
-$DIFF = '/usr/bin/diff';
-
 # The default limit on the size of a diff in lines that will be included.
-$MAXDIFF = 200;
+our $FRAK_MAXDIFF = 200;
 
-# The full path to fs and vos.  Check various known paths first before falling
-# back on the user's PATH.
-($FS)  = grep { -x $_ } qw(/usr/bin/fs /usr/local/bin/fs);
-$FS ||= 'fs';
-($VOS) = grep { -x $_ }
-    qw(/usr/bin/vos /usr/sbin/vos /usr/local/bin/vos /usr/local/sbin/vos);
+# The full path to a suitable diff that supports -u.
+our $DIFF = 'diff';
+
+# The full path to fs and vos.  vos may be in an sbin directory, which may
+# not be on the user's path by default, so check there first.
+our $FS = 'fs';
+our $VOS = grep { -x $_ } qw(/usr/local/sbin/vos /usr/sbin/vos);
 $VOS ||= 'vos';
+
+# Load the configuration file if it exists.
+if (-f '/etc/afs-admin-tools/config') {
+    require '/etc/afs-admin-tools/config';
+}
 
 ##############################################################################
 # Modules and declarations
@@ -42,8 +45,8 @@ $VOS ||= 'vos';
 require 5.006;
 
 use strict;
-use vars qw($CHANGEDIR $CROSSMOUNT $DEBUG $DIFF $FS $LOGFILE $MAXDIFF
-            $MUNGE $NODIFF $QUIET $ROOTRO $ROOTRW $VOS);
+use vars qw($CHANGEDIR $CROSSMOUNT $DEBUG $LOGFILE $MUNGE $NODIFF $QUIET
+            $ROOTRO $ROOTRW);
 
 use Cwd qw(cwd);
 use File::Find qw(find);
@@ -228,10 +231,10 @@ sub print_diff ( $$ ) {
     my (@diff, $diff);
     while (<DIFF>) {
         s{(\s)(?:\Q$ROOTRO\E|\Q$ROOTRW\E)} {$1...} if $. <= 2;
-        push (@diff, $_) if $. <= $MAXDIFF;
+        push (@diff, $_) if $. <= $FRAK_MAXDIFF;
     }
     my $output;
-    if ($. > $MAXDIFF) {
+    if ($. > $FRAK_MAXDIFF) {
         $output = "    LARGE diff output suppressed, $. lines\n";
     } else {
         $output = join ('', @diff);
@@ -676,7 +679,7 @@ Getopt::Long::config ('bundling');
 GetOptions ('cross-mounts|C'     => \$CROSSMOUNT,
             'change-dir|c=s'     => \$CHANGEDIR,
             'debug|D'            => \$DEBUG,
-            'max-diff-lines|d=i' => \$MAXDIFF,
+            'max-diff-lines|d=i' => \$FRAK_MAXDIFF,
             'help|h'             => \$help,
             'no-log|L'           => \$nolog,
             'log-file|l=s'       => \$logfile,
@@ -807,40 +810,41 @@ I<logfile>] (I<volume> | I<rw-path> [ I<ro-path> ])
 
 =head1 DESCRIPTION
 
-B<frak> is a tool for comparing the structure and contents of two directory
-trees in AFS.  Its most common use is to determine the changes in a
-read/write AFS volume relative to the read-only copy of the same volume, to
-ensure that it's safe to release, but it can be used to compare any two
-arbitrary AFS trees.  It can even be used in a limited fashion to compare
-non-AFS trees, although in that case C<diff -r> may be more appropriate.
+B<frak> is a tool for comparing the structure and contents of two
+directory trees in AFS.  Its most common use is to determine the changes
+in a read/write AFS volume relative to the read-only copy of the same
+volume, to ensure that it's safe to release, but it can be used to compare
+any two arbitrary AFS trees.  It can even be used in a limited fashion to
+compare non-AFS trees, although in that case C<diff -r> may be more
+appropriate.
 
-B<frak> understands mount points and directory ACLs and will detect changes
-in those as well as more typical changes in file size, permissions, or
-existence.  It also knows not to cross mount points (unless given the B<-C>
-option).  Note that two files with the same permissions and the same size
-will be considered identical; the file is not actually compared with diff if
-its other information matches.
+B<frak> understands mount points and directory ACLs and will detect
+changes in those as well as more typical changes in file size,
+permissions, or existence.  It also knows not to cross mount points
+(unless given the B<-C> option).  Note that two files with the same
+permissions and the same size will be considered identical; the file is
+not actually compared with diff if its other information matches.
 
 If two files are different and are determined to be text files (using the
-C<-T> probe in Perl; see L<perlfunc> for more information), C<diff -u> will
-be run on the two files.  This output will be included in the B<frak> output
-provided it's less than 100 lines long (controllable with B<-d>).
-Otherwise, just the length of the diff in lines will be given.  Diffs can be
-suppressed completely with B<-s>.
+C<-T> probe in Perl; see L<perlfunc> for more information), C<diff -u>
+will be run on the two files.  This output will be included in the B<frak>
+output provided it's less than 100 lines long (controllable with B<-d>).
+Otherwise, just the length of the diff in lines will be given.  Diffs can
+be suppressed completely with B<-s>.
 
 The paths to compare may be specified in three ways.  A volume name can be
 given as the sole argument (distinguished from a path by the fact that it
 doesn't contain a C</>).  In this case, the read-only and read-write
-versions of that volume will be mounted in the current working directory (so
-the current working directory must be in AFS), as F<frak-I<volume>> and
-F<frak-I<volume>.readonly>, and then compared.  A path may be given as the
-sole argument, in which case it is taken to be the path to the read-write
-version of the tree and should begin with C</afs/.>.  It will be compared
-against the read-only path to the same tree, formed by removing the period
-after C</afs/>.  Or, finally, two paths may be given, and they will be taken
-to be the read-write path (the newer tree) and the read-only path (the older
-tree) respectively.  Please note that this is the exact opposite order from
-what one would pass to B<diff>.
+versions of that volume will be mounted in the current working directory
+(so the current working directory must be in AFS), as F<frak-I<volume>>
+and F<frak-I<volume>.readonly>, and then compared.  A path may be given as
+the sole argument, in which case it is taken to be the path to the
+read-write version of the tree and should begin with C</afs/.>.  It will
+be compared against the read-only path to the same tree, formed by
+removing the period after C</afs/>.  Or, finally, two paths may be given,
+and they will be taken to be the read-write path (the newer tree) and the
+read-only path (the older tree) respectively.  Please note that this is
+the exact opposite order from what one would pass to B<diff>.
 
 If a volume is specified, B<frak> will by default log the output to a file
 named after the volume in the current directory, as well as printing the
@@ -851,11 +855,11 @@ will by default only print to standard output.  To also log to a file,
 specify a log file location with B<-l>.  In either case, the log file will
 be overwritten if it already exists.
 
-If a volume is specified, paths in the output will be shown relative to the
-root of the volume.  If a path is specified, paths in the output will be
-complete paths unless B<-m> is given.  If B<-m> is given, paths will be
-relative to the root of the tree specified by the path given on the command
-line.
+If a volume is specified, paths in the output will be shown relative to
+the root of the volume.  If a path is specified, paths in the output will
+be complete paths unless B<-m> is given.  If B<-m> is given, paths will be
+relative to the root of the tree specified by the path given on the
+command line.
 
 =head1 OPTIONS
 
@@ -863,17 +867,17 @@ line.
 
 =item B<-C>, B<--cross-mounts>
 
-Normally, B<frak> will never cross a mount point.  If this option is given,
-it will keep comparing through mount points.  Be careful when using this
-option, since B<frak> will happily recurse through all AFS file systems in
-the world, and remember that circular path structures are possible in AFS.
-B<frak> does no checking to make sure that it doesn't revisit the same
-volume endlessly.
+Normally, B<frak> will never cross a mount point.  If this option is
+given, it will keep comparing through mount points.  Be careful when using
+this option, since B<frak> will happily recurse through all AFS file
+systems in the world, and remember that circular path structures are
+possible in AFS.  B<frak> does no checking to make sure that it doesn't
+revisit the same volume endlessly.
 
 =item B<-c> I<changedir>, B<--change-dir>=I<changedir>
 
-When given this option, B<frak> creates three bundles I<changedir>, as well
-as directories named F<new> and F<old>.  The first bundle is named
+When given this option, B<frak> creates three bundles I<changedir>, as
+well as directories named F<new> and F<old>.  The first bundle is named
 F<changes.b>, which if run will populate the F<new> and F<old> directories
 with all of the files that have changed between the two trees.  The second
 bundle, F<revert.b>, will use those files to revert the changes to the
@@ -890,8 +894,9 @@ again after F<revert.b> has been applied, to make sure that the read-write
 volume really does match the read-only volume.
 
 This option only really makes sense when used with a path, rather than a
-volume, on the command line.  Otherwise, the bundles will use paths relative
-to the temporary mount points created by B<frak>, which isn't as useful.
+volume, on the command line.  Otherwise, the bundles will use paths
+relative to the temporary mount points created by B<frak>, which isn't as
+useful.
 
 =item B<-D>, B<--debug>
 
@@ -901,27 +906,28 @@ debugging B<frak>.
 =item B<-d> I<max-diff-lines>, B<--max-diff-lines>=I<max-diff-lines>
 
 Limit the number of lines of diffs shown for changed files to
-I<max-diff-lines>.  The default is 100.  Diffs with longer than that number
-of lines will be replaced with a message saying how many total lines the
-diff had.
+I<max-diff-lines>.  The default is the value of the $FRAK_MAXDIFF
+configuration variable, which in turn defaults to 200.  Diffs with longer
+than that number of lines will be replaced with a message saying how many
+total lines the diff had.
 
 =item B<-h>, B<--help>
 
-Print out this documentation (which is done simply by feeding the script to
-C<perldoc -t>).
+Print out this documentation (which is done simply by feeding the script
+to C<perldoc -t>).
 
 =item B<-L>, B<--no-log>
 
-Suppress the default logging to a file that occurs if a volume rather than a
-path is specified on the command line.  The output will only be sent to
+Suppress the default logging to a file that occurs if a volume rather than
+a path is specified on the command line.  The output will only be sent to
 standard output.
 
 =item B<-l> I<log>, B<--log-file>=I<log>
 
-Log the B<frak> output to I<log> as well as to standard output.  If a volume
-was specified on the command line, this overrides the default log file name
-(the name of the volume).  If a path was specified, this enables logging to
-a file.
+Log the B<frak> output to I<log> as well as to standard output.  If a
+volume was specified on the command line, this overrides the default log
+file name (the name of the volume).  If a path was specified, this enables
+logging to a file.
 
 =item B<-m>, B<--munge>
 
@@ -931,13 +937,14 @@ specified on the command line, rather than showing absolute paths.
 
 =item B<-q>, B<--quiet>
 
-Suppress the normal output to standard output.  B<frak> output will only be
-sent to the log file, if any.
+Suppress the normal output to standard output.  B<frak> output will only
+be sent to the log file, if any.
 
 =item B<-s>, B<--suppress-diffs>
 
 Suppress diffs for changed files.  This also turns off the check to see if
-changed files are binary or text, and will make B<frak> run somewhat faster.
+changed files are binary or text, and will make B<frak> run somewhat
+faster.
 
 =item B<-v>, B<--version>
 
@@ -945,11 +952,57 @@ Print out the version of B<frak> and exit.
 
 =back
 
+=head1 CONFIGURATION
+
+B<frak> loads configuration settings from F</etc/afs-admin-tools/config>
+if that file exists.  If it exists, it must be Perl code suitable for
+loading with C<require>.  This means that each line of the configuration
+file should be of the form:
+
+    our $VARIABLE = VALUE;
+
+where C<$VARIABLE> is the configuration variable being set and C<VALUE> is
+the value to set it to (which should be enclosed in quotes if it's not a
+number).  The file should end with:
+
+    1;
+
+so that Perl knows the file was loaded correctly.
+
+The supported configuration variables are:
+
+=over 4
+
+=item $FRAK_MAXDIFF
+
+The default limit on the number of diff lines that will be included.  This
+should be a number.  The default value is 200.  This setting is overridden
+by the B<-d> command-line option.
+
+=item $DIFF
+
+The full path to a B<diff> implementation that supports the B<-u> option.
+If this variable is not set, B<frak> defaults to using the first B<diff>
+program found on the user's path.
+
+=item $FS
+
+The full path to the AFS B<fs> utility.  If this variable is not set,
+B<frak> defaults to looking for B<fs> on the user's PATH.
+
+=item $VOS
+
+The full path to the AFS B<vos> utility.  If this variable is not set,
+B<frak> defaults to F</usr/local/sbin/vos> or F</usr/sbin/vos> if they
+exist, and otherwise looks for B<vos> on the user's PATH.
+
+=back
+
 =head1 EXAMPLES
 
-Compare the read-write and read-only copies of the volume C<pubsw>, mounting
-both in the current directory to do the comparison, and putting a copy of
-the output into the file F<pubsw> in the current directory:
+Compare the read-write and read-only copies of the volume C<pubsw>,
+mounting both in the current directory to do the comparison, and putting a
+copy of the output into the file F<pubsw> in the current directory:
 
     frak pubsw
 
@@ -978,8 +1031,8 @@ Do the same, but log the output to F</tmp/pubsw.log>:
 
     frak -l /tmp/pubsw.log /afs/.ir.stanford.edu/pubsw
 
-Compare the read-write and read-only copies of the volume C<pubsw>, writing
-the change bundles into the subdirectory F<changes> of the current
+Compare the read-write and read-only copies of the volume C<pubsw>,
+writing the change bundles into the subdirectory F<changes> of the current
 directory:
 
     frak -c changes /afs/.ir.stanford.edu/pubsw
@@ -988,13 +1041,6 @@ One can then cd to the F<changes> directory and run C<changes.b>, and then
 C<revert.b> to revert the changes to the read-write path.  At some point
 later, one could run C<apply.b> to replace the changes.
 
-=head1 SEE ALSO
-
-bundle(1), diff(1)
-
-The current version of this program is available from its web page at
-L<http://www.eyrie.org/~eagle/software/frak/>.
-
 =head1 AUTHOR
 
 Originally written by Neil Crellin <neilc@stanford.edu>.  Substantially
@@ -1002,10 +1048,18 @@ reorganized and rewritten by Russ Allbery <rra@stanford.edu>.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 1998, 1999, 2004 Board of Trustees, Leland Stanford Jr.
-University.
+Copyright 1998, 1999, 2004, 2011 The Board of Trustees of the Leland
+Stanford Junior University.
 
 This program is free software; you may redistribute it and/or modify it
 under the same terms as Perl itself.
+
+=head1 SEE ALSO
+
+L<bundle(1)>, L<diff(1)>
+
+This script is part of the afs-admin-tools package.  The most recent
+version is available from the afs-admin-tools web page at
+L<http://www.eyrie.org/~eagle/software/afs-admin-tools/>.
 
 =cut

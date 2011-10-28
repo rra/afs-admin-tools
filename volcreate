@@ -9,7 +9,7 @@ our $VERSION = '@VERSION@ @DATE@';
 #
 # Written by Neil Crellin <neilc@stanford.edu>
 #        and Russ Allbery <rra@stanford.edu>
-# Copyright 1998, 1999, 2000, 2002, 2004, 2005
+# Copyright 1998, 1999, 2000, 2002, 2004, 2005, 2011
 #     The Board of Trustees of the Leland Stanford Junior University
 #
 # This program is free software; you may redistribute it and/or modify it
@@ -19,30 +19,32 @@ our $VERSION = '@VERSION@ @DATE@';
 # Site configuration
 ##############################################################################
 
-# The path to a file containing ACL rules for volumes.  See the documentation
-# for its format.
-$ACLS = '/afs/ir/service/afs/data/acl-rules';
-
 # The cutoff proportion of candidate partitions that will be considered for
 # placement of a read/write volume.  This can be overridden with the -p flag.
-$CUTOFF = 0.2;
+our $VOLCREATE_CUTOFF = 0.2;
 
-# The full path to the loadmtpt utility.
-($LOADMTPT)  = grep { -x $_ } 
-                    qw(/usr/bin/loadmtpt /afs/ir/service/afs/scripts/loadmtpt);
-$LOADMTPT ||= '/usr/bin/loadmtpt';
+# The path to a file containing ACL rules for volumes.  See the documentation
+# for its format.
+our $ACLS = '/etc/afs-admin-tools/acl-rules';
 
 # The path to a file containing a list of current AFS servers and their volume
 # types.  See the documentation for its format.
-$SERVERS = '/afs/ir/service/afs/data/serverlist.types';
+our $SERVERS = '/etc/afs-admin-tools/servers';
 
-# The full path to fs and vos.  Check various known paths first before falling
-# back on the user's PATH.
-($FS)  = grep { -x $_ } qw(/usr/bin/fs /usr/local/bin/fs);
-$FS ||= 'fs';
-($VOS) = grep { -x $_ }
-    qw(/usr/bin/vos /usr/sbin/vos /usr/local/bin/vos /usr/local/sbin/vos);
+# The full path to the loadmtpt utility from afs-mountpoints.  The default of
+# the empty string says not to do mount point loading.
+our $LOADMTPT = '';
+
+# The full path to fs and vos.  vos may be in an sbin directory, which may
+# not be on the user's path by default, so check there first.
+our $FS = 'fs';
+our $VOS = grep { -x $_ } qw(/usr/local/sbin/vos /usr/sbin/vos);
 $VOS ||= 'vos';
+
+# Load the configuration file if it exists.
+if (-f '/etc/afs-admin-tools/config') {
+    require '/etc/afs-admin-tools/config';
+}
 
 ##############################################################################
 # Modules and declarations
@@ -51,7 +53,7 @@ $VOS ||= 'vos';
 require 5.006;
 
 use strict;
-use vars qw($ACLS $CUTOFF $FS $JUSTPRINT $LOADMTPT $SERVERS $VOS);
+use vars qw($JUSTPRINT);
 use subs qw(system);
 
 use Getopt::Long qw(GetOptions);
@@ -157,7 +159,7 @@ sub find_best_normal {
         die "$0: no servers found for type $type\n";
     }
     my @result = find_targets @locations;
-    return @{ $result[int rand (scalar (@result) * $CUTOFF)] };
+    return @{ $result[int rand (scalar (@result) * $VOLCREATE_CUTOFF)] };
 }
 
 # Given a volume type for a replicated volume and the number of replicas, look
@@ -211,7 +213,8 @@ sub find_best_replicated {
     }
     my @locations;
     my @targets = find_targets @rw;
-    push (@locations, $targets[int rand (scalar (@targets) * $CUTOFF)]);
+    push (@locations,
+          $targets[int rand (scalar (@targets) * $VOLCREATE_CUTOFF)]);
     my %sites = map { $_ => 1 } values %servers;
     for my $site (keys %sites) {
         last if @locations >= $replicas;
@@ -345,7 +348,7 @@ GetOptions ('c|clone=s'            => \$clone,
             'h|help'               => \$help,
             'q|quiet'              => \$quiet,
             'n|dry-run|just-print' => \$JUSTPRINT,
-            'p|proportion=f'       => \$CUTOFF,
+            'p|proportion=f'       => \$VOLCREATE_CUTOFF,
             'r|replicas=i'         => \$replicas,
             't|type=s'             => \$type,
             'v|version'            => \$version) or exit 1;
@@ -357,7 +360,9 @@ if ($help) {
     exit 0;
 }
 if ($replicas && !$type) { die "-r option given without -t option\n" }
-if ($CUTOFF > 1 || $CUTOFF < 0) { die "-p value must be between 0 and 1\n" }
+if ($VOLCREATE_CUTOFF > 1 || $VOLCREATE_CUTOFF < 0) {
+    die "-p value must be between 0 and 1\n";
+}
 $replicas ||= 0;
 
 # If quiet operation was requested, cheat by rerouting stdout to /dev/null.
@@ -452,47 +457,48 @@ B<volcreate> [B<-hnqv>] [B<-c> I<clone-from>] B<-t> I<type> [B<-p> I<cutoff>]
 
 B<volcreate> creates a new AFS volume on the given server and partition,
 sets its quota, and mounts it in the file system at the given path,
-optionally setting its ACL.  It then updates the AFS mount point database to
-include this new volume.
+optionally setting its ACL.  It then updates the AFS mount point database
+to include this new volume.
 
-I<server> is the AFS server on which to create the volume.  AFS servers may
-be specified as just a number; all numeric server names will have C<afssvr>
-prepended to them.
+I<server> is the AFS server on which to create the volume.  AFS servers
+may be specified as just a number; all numeric server names will have
+C<afssvr> prepended to them.
 
-I<part> is the partition on which to create that volume.  Partitions may be
-specified as a simple letter, as C<vicepX>, or as C</vicepX>.  More than 26
-partitions on one server is not supported.  Partitions may also be specified
-as C<.>, in which case a random parition on that server in the top 20% in
-free space according to B<vos partinfo> is chosen, or as a string of letters
-and letter ranges such as C<ace-gm>, in which case a random partition of the
-set specified in the top 20% in free space is chosen.  (In this example, the
-set is /vicepa, /vicepc, /vicepe through /vicepg, or /vicepm on the given
-sever.)  The 20% cutoff proportion can be overridden with the B<-p> option.
+I<part> is the partition on which to create that volume.  Partitions may
+be specified as a simple letter, as C<vicepX>, or as C</vicepX>.  More
+than 26 partitions on one server is not supported.  Partitions may also be
+specified as C<.>, in which case a random parition on that server in the
+top 20% in free space according to B<vos partinfo> is chosen, or as a
+string of letters and letter ranges such as C<ace-gm>, in which case a
+random partition of the set specified in the top 20% in free space is
+chosen.  (In this example, the set is /vicepa, /vicepc, /vicepe through
+/vicepg, or /vicepm on the given sever.)  The 20% cutoff proportion can be
+overridden with the B<-p> option.
 
-Alternately, rather than giving a server and partition, B<volcreate> accepts
-the B<-t> option to specify a volume type.  If this option is given, no
-server or partition is necessary and B<volcreate> will instead place the
-volume on an appropriate server by finding a random partition in the top 20%
-of the most percentage space free of the available server partitions for
-that volume type.  As above, the cutoff proportion can be overridden with
-the B<-p> option.  For more information on defining volume types and
-associating them with appropriate servers and partitions, see L<FILES>
-below.
+Alternately, rather than giving a server and partition, B<volcreate>
+accepts the B<-t> option to specify a volume type.  If this option is
+given, no server or partition is necessary and B<volcreate> will instead
+place the volume on an appropriate server by finding a random partition in
+the top 20% of the most percentage space free of the available server
+partitions for that volume type.  As above, the cutoff proportion can be
+overridden with the B<-p> option.  For more information on defining volume
+types and associating them with appropriate servers and partitions, see
+L<CONFIGURATION> below.
 
-When B<-t> is given, B<-r> may also be given to specify a number of replicas
-if a replicated volume is being created.  When creating a replicated volume,
-the read/write copy will be placed as described above, but the read-only
-replicas will be placed on the I<replicas> partitions with the most free
-space.
+When B<-t> is given, B<-r> may also be given to specify a number of
+replicas if a replicated volume is being created.  When creating a
+replicated volume, the read/write copy will be placed as described above,
+but the read-only replicas will be placed on the I<replicas> partitions
+with the most free space.
 
 I<volume> is the name of the volume to create.  I<quota> is its quota in
-megabytes (B<not> in kilobytes).  I<mount> is the full path to the intended
-mount location of the volume (this must begin with "/afs/.ir/" so that the
-mount point database remains consistent).  I<acl> is any normal ACL
-arguments to C<fs setacl>.
+megabytes (B<not> in kilobytes).  I<mount> is the full path to the
+intended mount location of the volume (this must begin with "/afs/.ir/" so
+that the mount point database remains consistent).  I<acl> is any normal
+ACL arguments to C<fs setacl>.
 
 For some types of volumes, some ACLs will be set automatically.  This is
-governed by the F<acl-rules> file; see L<FILES> below.
+governed by the F<acl-rules> file; see L<CONFIGURATION> below.
 
 =head1 OPTIONS
 
@@ -519,19 +525,19 @@ Don't run any commands, just print out what would have been done.
 
 =item B<-p> I<cutoff>, B<--proportion>=I<cutoff>
 
-By default, when placing read/write volumes, the destination partition will
-be chosen randomly from the top 20% of partitions ranked by the most free
-space.  The placement of the volume is somewhat randomized to avoid putting
-lots of small volumes on the same mostly unused partition, creating a
-long-term space problem when all of those volumes are used.
+By default, when placing read/write volumes, the destination partition
+will be chosen randomly from the top 20% of partitions ranked by the most
+free space.  The placement of the volume is somewhat randomized to avoid
+putting lots of small volumes on the same mostly unused partition,
+creating a long-term space problem when all of those volumes are used.
 
-This option can be used to change the number of partitions selected from for
-this random placement.  The default is 0.2, representing that top 20%
+This option can be used to change the number of partitions selected from
+for this random placement.  The default is 0.2, representing that top 20%
 metric.  A value of 0 will always choose the partition with the most free
-space.  A value of 1 will cause the placement to be completely random among
-all possible locations, without regard to which have the most free space.
-Any other value will be the proportion of the possible locations that will
-be chosen between randomly.
+space.  A value of 1 will cause the placement to be completely random
+among all possible locations, without regard to which have the most free
+space.  Any other value will be the proportion of the possible locations
+that will be chosen between randomly.
 
 =item B<-q>, B<--quiet>
 
@@ -542,16 +548,17 @@ Run quietly.  Only errors (if any) will be output.
 The number of replicas for the volume.  Use of this option indicates that
 the volume is replicated, and it will be replicated at a number of sites
 equal to the I<replicas> value.  The first replica will always be on the
-same server and partition as the read/write volume; the rest will be chosen
-from the servers that hold read-only replicas for that volume type.  B<-t>
-must be given if this option is used.
+same server and partition as the read/write volume; the rest will be
+chosen from the servers that hold read-only replicas for that volume type.
+B<-t> must be given if this option is used.
 
 =item B<-t> I<type>, B<--type>=I<type>
 
-Create a volume of the specified type.  When this option is used, no server
-or partition should be specified, and instead B<volcreate> will find all the
-servers that can store that volume type and pick the server and partition
-with the most percentage space free.  This option is required to use B<-r>.
+Create a volume of the specified type.  When this option is used, no
+server or partition should be specified, and instead B<volcreate> will
+find all the servers that can store that volume type and pick the server
+and partition with the most percentage space free.  This option is
+required to use B<-r>.
 
 =item B<-v>, B<--version>
 
@@ -559,10 +566,123 @@ Print out the version of B<volcreate> and quit.
 
 =back
 
+=head1 CONFIGURATION
+
+=head2 General Settings
+
+B<volcreate> loads configuration settings from
+F</etc/afs-admin-tools/config> if that file exists.  If it exists, it must
+be Perl code suitable for loading with C<require>.  This means that each
+line of the configuration file should be of the form:
+
+    our $VARIABLE = VALUE;
+
+where C<$VARIABLE> is the configuration variable being set and C<VALUE> is
+the value to set it to (which should be enclosed in quotes if it's not a
+number).  The file should end with:
+
+    1;
+
+so that Perl knows the file was loaded correctly.
+
+The supported configuration variables are:
+
+=over 4
+
+=item $VOLCREATE_CUTOFF
+
+The cutoff proportion of candidate partitions that will be considered for
+placement of a read/write volume.  The default is 0.2 (20%).  This can be
+overridden with the B<-p> flag.
+
+=item $ACLS
+
+The path to a file containing ACL rules for volumes.  See L<ACL Rules>
+below for more information about its syntax.  The default value is
+F</etc/afs-admin-tools/acl-rules>.
+
+=item $SERVERS
+
+The path to a file containing a list of current AFS servers and their
+volume types.  See L<AFS Servers> below for more information about its
+syntax.  The default value is F</etc/afs-admin-tools/servers>.
+
+=item $LOADMTPT
+
+The full path to the B<loadmtpt> utility from afs-mountpoints.  If this
+variable is set, B<loadmtpt> will be invoked for each new volume created
+to record its mount point in the mount point database.  The default is the
+empty string, which says to not run B<loadmtpt>.
+
+=item $FS
+
+The full path to the AFS B<fs> utility.  If this variable is not set,
+B<volcreate> defaults to looking for B<fs> on the user's PATH.
+
+=item $VOS
+
+The full path to the AFS B<vos> utility.  If this variable is not set,
+B<volcreate> defaults to F</usr/local/sbin/vos> or F</usr/sbin/vos> if
+they exist, and otherwise looks for B<vos> on the user's PATH.
+
+=back
+
+=head2 ACL Rules
+
+The filel pointed to by the $ACLS configuration variable
+(F</etc/afs-admin-tools/acl-rules> by default) contains rules specifying
+the default ACLs that should be set on different types of volumes.  The
+format of this file should be a regular expression matching a class of
+volumes, surrounded by C<//> and starting in the first column, and then
+followed by whitespace-indented user/ACL pairs that apply to that class of
+volumes, one per line.  All matching regular expressions will contribute
+their set of ACL settings to the final ACL string.  Any ACLs given on the
+command line of volcreate will take precedence over the ones in this file
+(but the ones in this file will still be applied -- the ACLs will be
+merged).
+
+A sample entry would be:
+
+    /^(group|dept)\./
+        system:anyuser read
+        system:dept-admin all
+
+Note that the regex line must not be indented (must begin in column one),
+and the ACL lines must be indented.  Think of it as Python.
+
+=head2 AFS Servers
+
+The file pointed to by the $SERVERS configuration variable
+(F</etc/afs-admin-tools/servers> by default) contains a list of AFS
+servers that B<volcreate> should consider as potential hosts for new
+volumes.  Each line should start with an AFS server name, optionally a
+location for that server in square brackets, and then optionally contain a
+space-separated list of types of volumes handled by that server.  Those
+volume types may begin with a single letter or range of letters and a
+colon, indicating that only the partition or partitions named handle that
+type of volume.
+
+Blank lines and lines beginning with C<#> are ignored.
+
+For non-replicated volumes, the type in this file should match the type
+given to B<volcreate>.  For replicated volumes, the type suffixed with
+C<-rw> will be used for the read/write volume and the type suffixed with
+C<-ro> will be used for the replicas.
+
+So, for example, a sample entry would be:
+
+    afssvr11 [sweet] a-c:logs d:pubsw-ro d:web-ro
+
+When creating replicated volumes, B<volcreate> will attempt to put at
+least one replica in every distinct location that accepts the C<-ro>
+version of that volume type.  The names of the locations are arbitrary;
+they can be any label as long as servers in the same location use the same
+label.
+
 =head1 EXAMPLES
 
-Create the volume ls.mail.logs on afssvr14 /vicepa with a quota of 20MB and
-mount it on /afs/.ir/site/leland/mail/logs:
+Create the volume ls.mail.logs on afssvr14 /vicepa with a quota of 20MB
+and mount it on /afs/.ir/site/leland/mail/logs:
 
     volcreate afssvr14 a ls.mail.logs 20 /afs/.ir/site/leland/mail/logs
 
@@ -575,7 +695,7 @@ giving system:localhosts read access and rra all access.
         -clear system:localhosts read rra all
 
 (this should all be typed on one line).  Note that C<fs setacl> flags like
--clear are allowed.
+B<-clear> are allowed.
 
 Create a replicated volume with three replicas of type pubsw named
 pubsw.byacc19 with a quota of 20MB and mount it at
@@ -599,61 +719,19 @@ Note that the meaningless 0 quota value is ignored.
 
 =over 4
 
-=item F</afs/ir/service/afs/data/serverlist.types>
+=item F</etc/afs-admin-tools/servers>
 
 The default path to a file containing a list of current AFS servers and
-their volume types.  Each line should start with an AFS server name,
-optionally a location for that server in square brackets, and then
-optionally contain a space-separated list of types of volumes handled by
-that server.  Those volume types may begin with a single letter or range of
-letters and a colon, indicating that only the partition or partitions named
-handle that type of volume.
+their volume types.  The path to this file can be overridden with the
+$SERVERS configuration variable.
 
-Blank lines and lines beginning with C<#> are ignored.
+=item F</etc/afs-admin-tools/acl-rules>
 
-For non-replicated volumes, the type in this file should match the type
-given to B<volcreate>.  For replicated volumes, the type suffixed with
-C<-rw> will be used for the read/write volume and the type suffixed with
-C<-ro> will be used for the replicas.
-
-So, for example, a sample entry would be:
-
-    afssvr11 [sweet] a-c:logs d:pubsw-ro d:web-ro
-
-When creating replicated volumes, B<volcreate> will attempt to put at least
-one replica in every distinct location that accepts the C<-ro> version of
-that volume type.
-
-=item F</afs/ir/service/afs/data/acl-rules>
-
-This file contains rules specifying the default ACLs that should be set on
-different types of volumes.  The format of this file should be a regular
-expression matching a class of volumes, surrounded by // and starting in the
-first column, and then followed by whitespace-indented user/ACL pairs that
-apply to that class of volumes, one per line.  All matching regular
-expressions will contribute their set of ACL settings to the final ACL
-string.  Any ACLs given on the command line of volcreate will take
-precedence over the ones in this file (but the ones in this file will still
-be applied -- the ACLs will be merged).
-
-A sample entry would be:
-
-    /^(group|dept)\./
-        system:anyuser read
-        system:dept-admin all
-
-Note that the regex line must not be indented (must begin in column one),
-and the ACL lines must be indented.  Think of it as Python.
+The default path to file contains rules specifying the default ACLs that
+should be set on different types of volumes.  The path to this file can be
+overridden with the $ACLS configuration variable.
 
 =back
-
-=head1 SEE ALSO
-
-L<vos_create(1)>, L<vos_dump(1)>, L<vos_restore(1)>, L<fs_mkmount(1)>,
-L<fs_setquota(1)>, L<fs_setacl(1)>
-
-The current version of this program is available from its web page at
-L<http://www.eyrie.org/~eagle/software/volcreate/>.
 
 =head1 AUTHORS
 
@@ -661,10 +739,19 @@ Neil Crellin <neilc@stanford.edu> and Russ Allbery <rra@stanford.edu>.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 1998, 1999, 2000, 2002, 2004, 2005 Board of Trustees, Leland
-Stanford Jr. University.
+Copyright 1998, 1999, 2000, 2002, 2004, 2005, 2011 The Board of Trustees
+of the Leland Stanford Junior University.
 
 This program is free software; you may redistribute it and/or modify it
 under the same terms as Perl itself.
+
+=head1 SEE ALSO
+
+L<fs_mkmount(1)>, L<fs_setquota(1)>, L<fs_setacl(1)>, L<loadmtpt(1)>,
+L<vos_create(1)>, L<vos_dump(1)>, L<vos_restore(1)>
+
+This script is part of the afs-admin-tools package.  The most recent
+version is available from the afs-admin-tools web page at
+L<http://www.eyrie.org/~eagle/software/afs-admin-tools/>.
 
 =cut

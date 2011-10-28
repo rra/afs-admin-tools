@@ -16,10 +16,13 @@ our $VERSION = '@VERSION@ @DATE@';
 # Site configuration
 ##############################################################################
 
-# The full path to fs.  Check various known paths first before falling back on
-# the user's PATH.
-($FS) = grep { -x $_ } qw(/usr/bin/fs /usr/local/bin/fs);
-$FS ||= 'fs';
+# The full path to fs.  Default to checking the user's PATH.
+our $FS = 'fs';
+
+# Load the configuration file if it exists.
+if (-f '/etc/afs-admin-tools/config') {
+    require '/etc/afs-admin-tools/config';
+}
 
 ##############################################################################
 # Modules and declarations
@@ -28,7 +31,7 @@ $FS ||= 'fs';
 require 5.006;
 
 use strict;
-use vars qw($CROSSMOUNTS $FS $NOMOUNTS $VERBOSE);
+use vars qw($CROSSMOUNTS $NOMOUNTS $VERBOSE);
 
 use File::Find qw(find);
 use Getopt::Long qw(GetOptions);
@@ -349,8 +352,8 @@ Run C<fs help> for more usage information for B<fs>.
 
 =item B<-h>, B<--help>
 
-Print out this documentation (which is done simply by feeding the script to
-C<perldoc -t>) and then exit.
+Print out this documentation (which is done simply by feeding the script
+to C<perldoc -t>) and then exit.
 
 =item B<-m>, B<--cross-mounts>
 
@@ -363,11 +366,12 @@ directory tree you're using it on.
 
 =item B<-M>, B<--no-mounts>
 
-Normally, B<fsr> will recurse into all directories specified on the command
-line, regardless of whether those directories are mount points or not.  Only
-mount points underneath those directories won't be crossed (in the absence
-of the B<-m> option).  With this option, any directories specified on the
-command line that are actually mount points will also be skipped.
+Normally, B<fsr> will recurse into all directories specified on the
+command line, regardless of whether those directories are mount points or
+not.  Only mount points underneath those directories won't be crossed (in
+the absence of the B<-m> option).  With this option, any directories
+specified on the command line that are actually mount points will also be
+skipped.
 
 =item B<-V>, B<--verbose>
 
@@ -379,10 +383,38 @@ Print the version of B<fsr> and exit.
 
 =back
 
+=head1 CONFIGURATION
+
+B<fsr> loads configuration settings from F</etc/afs-admin-tools/config> if
+that file exists.  If it exists, it must be Perl code suitable for loading
+with C<require>.  This means that each line of the configuration file
+should be of the form:
+
+    our $VARIABLE = VALUE;
+
+where C<$VARIABLE> is the configuration variable being set and C<VALUE> is
+the value to set it to (which should be enclosed in quotes if it's not a
+number).  The file should end with:
+
+    1;
+
+so that Perl knows the file was loaded correctly.
+
+The supported configuration variables are:
+
+=over 4
+
+=item $FS
+
+The full path to the AFS B<fs> utility.  If this variable is not set,
+B<fsr> defaults to looking for B<fs> on the user's PATH.
+
+=back
+
 =head1 EXAMPLES
 
-Give person1 all AFS permissions (rlidwka) on the group directory F<mygroup>
-and removes all AFS permissions to that directory for person2:
+Give person1 all AFS permissions (rlidwka) on the group directory
+F<mygroup> and removes all AFS permissions to that directory for person2:
 
     fsr sa /afs/ir/group/mygroup person1 all person2 none
 
@@ -392,8 +424,8 @@ subdirectories that are actually mount points:
 
     fsr sa -dir cs* -acl personX read
 
-Same as above, but recursively descends across mountpoints (be very careful
-with this):
+Same as above, but recursively descends across mountpoints (be very
+careful with this):
 
     fsr -m sa -dir cs* -acl personX read
 
@@ -411,17 +443,10 @@ command will warn about and ignore those files.
 
 B<fsr> ignores symlinks.
 
-=head1 SEE ALSO
-
-fs(1)
-
-The current version of this program is available from its web page at
-L<http://www.eyrie.org/~eagle/software/fsr/>.
-
 =head1 AUTHORS
 
-Written by Russ Allbery <rra@stanford.edu> and Carol Oliver.  Inspired by a
-script written by Larry Schwimmer.
+Written by Russ Allbery <rra@stanford.edu> and Carol Oliver.  Inspired by
+a script written by Larry Schwimmer.
 
 =head1 COPYRIGHT AND LICENSE
 
@@ -430,5 +455,13 @@ of the Leland Stanford Junior University.
 
 This program is free software; you may redistribute it and/or modify it
 under the same terms as Perl itself.
+
+=head1 SEE ALSO
+
+L<fs(1)>
+
+This script is part of the afs-admin-tools package.  The most recent
+version is available from the afs-admin-tools web page at
+L<http://www.eyrie.org/~eagle/software/afs-admin-tools/>.
 
 =cut
