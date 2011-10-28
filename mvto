@@ -617,8 +617,7 @@ C<ace-gm>, in which case the partition of the set specified with the most
 free space is chosen.  (In this example, the set is /vicepa, /vicepc,
 /vicepe through /vicepg, or /vicepm on the given sever.)
 
-B<mvto> passes the verbose flag to most B<vos> commands it runs, and
-passes the B<-f> flag to B<vos release>.
+B<mvto> passes the verbose flag to most B<vos> commands it runs.
 
 =head1 OPTIONS
 
