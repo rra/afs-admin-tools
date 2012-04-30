@@ -21,5 +21,11 @@ afs-admin-tools 2.0 (unreleased)
     requires read/write paths and the read-only path is given, it will be
     converted automatically rather than failing.
 
+    volcreate no longer runs loadmtpt by default.  To enable loadmtpt
+    support, set $LOADMTPT in the configuration file to the path to the
+    loadmtpt utility.  Checking of the mount point prefix is only done if
+    loadmtpt support is enabled, since otherwise it doesn't matter how the
+    mount point path is designated.
+
     Remove support for Kerberos v4 authentication in volcreate-logs.  This
     only applies to the -k option, not to use of pre-existing credentials.

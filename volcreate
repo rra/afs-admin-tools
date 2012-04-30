@@ -279,8 +279,10 @@ sub volume_mount {
     } else {
         chmod (0755, $mtpt) or warn "Failed to chmod root: $!\n";
     }
-    system ($LOADMTPT, $mtpt) == 0
-        or warn 'Failed to load mountpoint (status ', ($? >> 8), ")\n";
+    if ($LOADMTPT) {
+        system ($LOADMTPT, $mtpt) == 0
+            or warn 'Failed to load mountpoint (status ', ($? >> 8), ")\n";
+    }
 }
 
 # Set the ACLs of the volume appropriately.  Some volumes have their own
@@ -394,7 +396,7 @@ if ($type) {
 # Ensure that the mount point starts with $VOLCREATE_MOUNT_PREFIX, if set.
 # This is also useful for ensuring that the arguments weren't given in the
 # wrong order and no argument was missing.
-if (defined $VOLCREATE_MOUNT_PREFIX) {
+if (defined ($VOLCREATE_MOUNT_PREFIX) and $LOADMTPT) {
     my $prefix = $VOLCREATE_MOUNT_PREFIX;
     if ($mtpt !~ m,^\Q$prefix\E,) {
         my $try = $mtpt;
