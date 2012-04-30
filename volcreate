@@ -9,7 +9,7 @@ our $VERSION = '@VERSION@ @DATE@';
 #
 # Written by Neil Crellin <neilc@stanford.edu>
 #        and Russ Allbery <rra@stanford.edu>
-# Copyright 1998, 1999, 2000, 2002, 2004, 2005, 2011
+# Copyright 1998, 1999, 2000, 2002, 2004, 2005, 2011, 2012
 #     The Board of Trustees of the Leland Stanford Junior University
 #
 # This program is free software; you may redistribute it and/or modify it
@@ -22,6 +22,11 @@ our $VERSION = '@VERSION@ @DATE@';
 # The cutoff proportion of candidate partitions that will be considered for
 # placement of a read/write volume.  This can be overridden with the -p flag.
 our $VOLCREATE_CUTOFF = 0.2;
+
+# Unset by default, this requires that all mount points begin with a
+# particular prefix, generally to ensure that stored mount points using
+# loadmtpt are all named consistently.
+our $VOLCREATE_MOUNT_PREFIX;
 
 # The path to a file containing ACL rules for volumes.  See the documentation
 # for its format.
@@ -386,10 +391,21 @@ if ($type) {
     ($server, $partition, $volume, $quota, $mtpt, @acls) = @ARGV;
 }
 
-# Because we're loading the mount point database, we need the mount point
-# specified in the correct fashion.  This also catches most of the cases of
-# missing an argument or getting the arguments in the wrong order.
-die "Mount point must begin with /afs/.ir/\n" unless $mtpt =~ m%^/afs/.ir/%;
+# Ensure that the mount point starts with $VOLCREATE_MOUNT_PREFIX, if set.
+# This is also useful for ensuring that the arguments weren't given in the
+# wrong order and no argument was missing.
+if (defined $VOLCREATE_MOUNT_PREFIX) {
+    my $prefix = $VOLCREATE_MOUNT_PREFIX;
+    if ($mtpt !~ m,^\Q$prefix\E,) {
+        my $try = $mtpt;
+        $try =~ s,^/afs/([^.]),/afs/.$1,;
+        if ($try =~ m,^\Q$prefix\E,) {
+            $mtpt = $try;
+        } else {
+            die "Mount point must begin with $prefix\n";
+        }
+    }
+}
 
 # fs mkm doesn't like trailing slashes on the mount point, and neither does
 # the mount point database.
@@ -594,6 +610,19 @@ The supported configuration variables are:
 The cutoff proportion of candidate partitions that will be considered for
 placement of a read/write volume.  The default is 0.2 (20%).  This can be
 overridden with the B<-p> flag.
+
+=item $VOLCREATE_MOUNT_PREFIX
+
+If set, the path at which the volume is created must start with this
+string.  This can be used to ensure that all registered mount points (when
+B<loadmtpt> support is enabled) use a consistent naming scheme.  (All of
+them pointing to the read/write volume or using the fully-qualified cell
+name, for example.)
+
+If this prefix starts with F</afs/.> and the path starts with the sam
+prefix but without the leading period (indicating read/write paths), the
+leading period will be quietly added.  Otherwise, invalid arguments will
+be rejected.
 
 =item $ACLS
 

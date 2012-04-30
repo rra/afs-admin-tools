@@ -14,5 +14,12 @@ afs-admin-tools 2.0 (unreleased)
     where /usr/local/sbin and /usr/sbin are checked first (since those
     directories may not be on the PATH).
 
+    volcreate no longer requires mount points begin with the
+    Stanford-specific path prefix.  Instead, a new configuration variable,
+    $VOLCREATE_MOUNT_PREFIX, can be set in the configuration file to
+    require mount point paths begin with that prefix.  If the prefix
+    requires read/write paths and the read-only path is given, it will be
+    converted automatically rather than failing.
+
     Remove support for Kerberos v4 authentication in volcreate-logs.  This
     only applies to the -k option, not to use of pre-existing credentials.
