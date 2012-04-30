@@ -13,3 +13,6 @@ afs-admin-tools 2.0 (unreleased)
     Look for AFS utilities on the user's PATH by default, except for vos
     where /usr/local/sbin and /usr/sbin are checked first (since those
     directories may not be on the PATH).
+
+    Remove support for Kerberos v4 authentication in volcreate-logs.  This
+    only applies to the -k option, not to use of pre-existing credentials.

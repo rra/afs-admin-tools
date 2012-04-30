@@ -7,7 +7,3 @@ volcreate:
    to something appropriate for the local cell.  (Perhaps require the RW
    version of a fully-qualified cell name?)  The restriction should also
    be conditional on loadmtpt support being enabled.
-
-volcreate-logs:
-
- * Remove Kerberos v4 support.

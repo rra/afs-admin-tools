@@ -4,7 +4,7 @@ our $VERSION = '@VERSION@ @DATE@';
 # volcreate-logs -- Create and grant quota to log volumes in AFS.
 #
 # Written by Russ Allbery <rra@stanford.edu>
-# Copyright 2002, 2004, 2011
+# Copyright 2002, 2004, 2011, 2012
 #     The Board of Trustees of the Leland Stanford Junior University
 #
 # This program is free software; you may redistribute it and/or modify it
@@ -361,7 +361,6 @@ if ($ticket) {
     require AFS::Utils;
     $ticket = $LOGS_TICKETS . '/' . $ticket unless $ticket =~ m%^/%;
     $ENV{KRB5CCNAME} = $ticket;
-    $ENV{KRBTKFILE} = $ticket;
     AFS::Utils::setpag () or die "$0: unable to setpag: $!\n";
     CORE::system ($AKLOG) == 0 or die "$0: unable to obtain tokens\n";
 }
@@ -636,7 +635,7 @@ Russ Allbery <rra@stanford.edu>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2002, 2004, 2011 The Board of Trustees of the Leland Stanford
+Copyright 2002, 2004, 2011, 2012 The Board of Trustees of the Leland Stanford
 Junior University.
 
 This program is free software; you may redistribute it and/or modify it
