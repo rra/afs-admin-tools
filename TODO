@@ -1,9 +1,11 @@
                         afs-admin-tools To-Do List
 
-volcreate:
+Coding Style:
 
- * This currently enforces a Stanford-specific restriction of mount points
-   starting with /afs/.ir/.  It should instead canonicalize mount points
-   to something appropriate for the local cell.  (Perhaps require the RW
-   version of a fully-qualified cell name?)  The restriction should also
-   be conditional on loadmtpt support being enabled.
+ * Update all scripts for current coding style and enforce with perlcritic
+   and perltidy.
+
+Test Suite:
+
+ * Add at least the standard test suite.  Checking underlying
+   functionality will be hard without access to a live AFS cell.
