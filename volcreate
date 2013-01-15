@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
 our $VERSION = '@VERSION@ @DATE@';
 #
 # volcreate -- Create a volume, mount and set acl and quota
@@ -9,11 +9,24 @@ our $VERSION = '@VERSION@ @DATE@';
 #
 # Written by Neil Crellin <neilc@stanford.edu>
 #        and Russ Allbery <rra@stanford.edu>
-# Copyright 1998, 1999, 2000, 2002, 2004, 2005, 2011, 2012
+# Copyright 1998, 1999, 2000, 2002, 2004, 2005, 2011, 2012, 2013
 #     The Board of Trustees of the Leland Stanford Junior University
 #
 # This program is free software; you may redistribute it and/or modify it
 # under the same terms as Perl itself.
+
+##############################################################################
+# Modules and declarations
+##############################################################################
+
+use 5.006;
+use strict;
+use warnings;
+
+use vars qw($JUSTPRINT);
+use subs qw(system);
+
+use Getopt::Long qw(GetOptions);
 
 ##############################################################################
 # Site configuration
@@ -50,18 +63,6 @@ $VOS ||= 'vos';
 if (-f '/etc/afs-admin-tools/config') {
     require '/etc/afs-admin-tools/config';
 }
-
-##############################################################################
-# Modules and declarations
-##############################################################################
-
-require 5.006;
-
-use strict;
-use vars qw($JUSTPRINT);
-use subs qw(system);
-
-use Getopt::Long qw(GetOptions);
 
 ##############################################################################
 # Overrides
@@ -459,6 +460,10 @@ __END__
 # Documentation
 ##############################################################################
 
+=for stopwords
+ACL AFS Crellin acl afs-admin-tools afssvr3 afssvr14 fs -hnqv loadmtpt
+afs-mountpoints partinfo pubsw rra volcreate vos pubsw.byacc19
+
 =head1 NAME
 
 volcreate - Create and mount a new AFS volume
@@ -485,7 +490,7 @@ C<afssvr> prepended to them.
 I<part> is the partition on which to create that volume.  Partitions may
 be specified as a simple letter, as C<vicepX>, or as C</vicepX>.  More
 than 26 partitions on one server is not supported.  Partitions may also be
-specified as C<.>, in which case a random parition on that server in the
+specified as C<.>, in which case a random partition on that server in the
 top 20% in free space according to B<vos partinfo> is chosen, or as a
 string of letters and letter ranges such as C<ace-gm>, in which case a
 random partition of the set specified in the top 20% in free space is
@@ -621,7 +626,7 @@ B<loadmtpt> support is enabled) use a consistent naming scheme.  (All of
 them pointing to the read/write volume or using the fully-qualified cell
 name, for example.)
 
-If this prefix starts with F</afs/.> and the path starts with the sam
+If this prefix starts with F</afs/.> and the path starts with the same
 prefix but without the leading period (indicating read/write paths), the
 leading period will be quietly added.  Otherwise, invalid arguments will
 be rejected.
@@ -660,7 +665,7 @@ they exist, and otherwise looks for B<vos> on the user's PATH.
 
 =head2 ACL Rules
 
-The filel pointed to by the $ACLS configuration variable
+The file pointed to by the $ACLS configuration variable
 (F</etc/afs-admin-tools/acl-rules> by default) contains rules specifying
 the default ACLs that should be set on different types of volumes.  The
 format of this file should be a regular expression matching a class of

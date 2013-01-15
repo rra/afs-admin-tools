@@ -6,31 +6,20 @@ our $VERSION = '@VERSION@ @DATE@';
 # Written by Carol Oliver
 # Portions by Russ Allbery <rra@stanford.edu>
 # Inspired by a script written by Larry Schwimmer
-# Copyright 1999, 2004, 2006, 2007, 2008, 2010, 2011
+# Copyright 1999, 2004, 2006, 2007, 2008, 2010, 2011, 2013
 #     The Board of Trustees of the Leland Stanford Junior University
 #
 # This program is free software; you may redistribute it and/or modify it
 # under the same terms as Perl itself.
 
 ##############################################################################
-# Site configuration
-##############################################################################
-
-# The full path to fs.  Default to checking the user's PATH.
-our $FS = 'fs';
-
-# Load the configuration file if it exists.
-if (-f '/etc/afs-admin-tools/config') {
-    require '/etc/afs-admin-tools/config';
-}
-
-##############################################################################
 # Modules and declarations
 ##############################################################################
 
-require 5.006;
-
+use 5.006;
 use strict;
+use warnings;
+
 use vars qw($CROSSMOUNTS $NOMOUNTS $VERBOSE);
 
 use File::Find qw(find);
@@ -44,6 +33,18 @@ BEGIN {
         $0 =~ s%.*/%%;
         die "$0 doesn't work with native Windows (but may with Cygwin)\n";
     }
+}
+
+##############################################################################
+# Site configuration
+##############################################################################
+
+# The full path to fs.  Default to checking the user's PATH.
+our $FS = 'fs';
+
+# Load the configuration file if it exists.
+if (-f '/etc/afs-admin-tools/config') {
+    require '/etc/afs-admin-tools/config';
 }
 
 ##############################################################################
@@ -311,6 +312,10 @@ __END__
 ##############################################################################
 # Documentation
 ##############################################################################
+
+=for stopwords
+AFS Schwimmer afs-admin-tools mountpoints afs-up -hMmVv fs fs-command fsr
+fs-options rl rlidwka subcommand subcommands subdirectories personX
 
 =head1 NAME
 

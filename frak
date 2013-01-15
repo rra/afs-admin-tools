@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
 our $VERSION = '@VERSION@ @DATE@';
 #
 # frak -- Show changes between two AFS trees.
@@ -11,11 +11,29 @@ our $VERSION = '@VERSION@ @DATE@';
 #
 # Written by Neil Crellin <neilc@stanford.edu>
 # Updated by Russ Allbery <rra@stanford.edu>
-# Copyright 1998, 1999, 2004, 2011
+# Copyright 1998, 1999, 2004, 2011, 2013
 #     The Board of Trustees of the Leland Stanford Junior University
 #
 # This program is free software; you may redistribute it and/or modify it
 # under the same terms as Perl itself.
+
+##############################################################################
+# Modules and declarations
+##############################################################################
+
+use 5.006;
+use strict;
+use warnings;
+
+use vars qw($CHANGEDIR $CROSSMOUNT $DEBUG $LOGFILE $MUNGE $NODIFF $QUIET
+            $ROOTRO $ROOTRW);
+
+use Cwd qw(cwd);
+use File::Find qw(find);
+use File::stat qw(lstat);
+use Getopt::Long qw(GetOptions);
+use POSIX qw(strftime);
+use Stat::lsMode qw(format_mode);
 
 ##############################################################################
 # Site configuration
@@ -37,23 +55,6 @@ $VOS ||= 'vos';
 if (-f '/etc/afs-admin-tools/config') {
     require '/etc/afs-admin-tools/config';
 }
-
-##############################################################################
-# Modules and declarations
-##############################################################################
-
-require 5.006;
-
-use strict;
-use vars qw($CHANGEDIR $CROSSMOUNT $DEBUG $LOGFILE $MUNGE $NODIFF $QUIET
-            $ROOTRO $ROOTRW);
-
-use Cwd qw(cwd);
-use File::Find qw(find);
-use File::stat qw(lstat);
-use Getopt::Long qw(GetOptions);
-use POSIX qw(strftime);
-use Stat::lsMode qw(format_mode);
 
 ##############################################################################
 # Utility functions
@@ -798,6 +799,10 @@ __END__
 ############################################################################
 # Documentation
 ############################################################################
+
+=for stopwords
+non-AFS AFS -CDhLmqsv Crellin afs-admin-tools changedir frak fs --munge
+ro-path rw-path vos
 
 =head1 NAME
 

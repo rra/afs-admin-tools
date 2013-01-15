@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
 our $VERSION = '@VERSION@ @DATE@';
 #
 # lsmounts -- List mountpoints found in a directory.
@@ -9,11 +9,23 @@ our $VERSION = '@VERSION@ @DATE@';
 #
 # Written by Neil Crellin <neilc@stanford.edu>
 # Modifications by Russ Allbery <rra@stanford.edu>
-# Copyright 1998, 1999, 2003, 2004, 2011
+# Copyright 1998, 1999, 2003, 2004, 2011, 2013
 #     The Board of Trustees of the Leland Stanford Junior University
 #
 # This program is free software; you may redistribute it and/or modify it
 # under the same terms as Perl itself.
+
+##############################################################################
+# Modules and declarations
+##############################################################################
+
+use 5.006;
+use strict;
+use warnings;
+
+use Cwd qw(cwd);
+use File::Find qw(find);
+use Getopt::Long qw(GetOptions);
 
 ##############################################################################
 # Site configuration
@@ -30,18 +42,6 @@ our $FS = 'fs';
 if (-f '/etc/afs-admin-tools/config') {
     require '/etc/afs-admin-tools/config';
 }
-
-##############################################################################
-# Modules and declarations
-##############################################################################
-
-require 5.006;
-
-use strict;
-
-use Cwd qw(cwd);
-use File::Find qw(find);
-use Getopt::Long qw(GetOptions);
 
 ##############################################################################
 # AFS information
@@ -148,6 +148,10 @@ __END__
 ##############################################################################
 # Documentation
 ##############################################################################
+
+=for stopwords
+AFS Crellin afs-admin-tools afs-mountpoints fs -hLlqrv loadmtpt lsmounts
+mountpoints
 
 =head1 NAME
 
@@ -264,7 +268,7 @@ directory /afs/ir:
     lsmounts /afs/ir
 
 The following command displays a simple list of all volumes found mounted
-under ~rra, decending through its directory structure recursively.  If
+under ~rra, descending through its directory structure recursively.  If
 there are other volumes mounted under that directory, they will be
 searched through as well:
 

@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
 our $VERSION = '@VERSION@ @DATE@';
 #
 # partinfo -- Show summary of space on AFS server partitions.
@@ -10,11 +10,24 @@ our $VERSION = '@VERSION@ @DATE@';
 #
 # Written by Neil Crellin <neilc@stanford.edu>
 # Modifications by Russ Allbery <rra@stanford.edu>
-# Copyright 1998, 1999, 2003, 2004, 2011
+# Copyright 1998, 1999, 2003, 2004, 2011, 2013
 #     The Board of Trustees of the Leland Stanford Junior University
 #
 # This program is free software; you may redistribute it and/or modify it
 # under the same terms as Perl itself.
+
+##############################################################################
+# Modules and declarations
+##############################################################################
+
+use 5.006;
+use strict;
+use warnings;
+
+use Getopt::Long qw(GetOptions);
+
+# Term::ANSIColor is also loaded dynamically if color is requested with the -c
+# option.
 
 ##############################################################################
 # Site configuration
@@ -41,17 +54,6 @@ if (-f '/etc/afs-admin-tools/config') {
 
 # You may also want to tweak the width of the partition column in the output
 # if you use machine names of a different length.  Search for %17s below.
-
-##############################################################################
-# Modules and declarations
-##############################################################################
-
-use strict;
-
-use Getopt::Long qw(GetOptions);
-
-# Term::ANSIColor is also loaded dynamically if color is requested with the -c
-# option.
 
 ##############################################################################
 # Output formatting
@@ -155,6 +157,9 @@ __END__
 ############################################################################
 # Documentation
 ############################################################################
+
+=for stopwords
+AFS Crellin afs-admin-tools afssvr -chqtv partinfo vos afssvr1 afssvr5
 
 =head1 NAME
 

@@ -1,14 +1,31 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
 our $VERSION = '@VERSION@ @DATE@';
 #
 # volcreate-logs -- Create and grant quota to log volumes in AFS.
 #
 # Written by Russ Allbery <rra@stanford.edu>
-# Copyright 2002, 2004, 2011, 2012
+# Copyright 2002, 2004, 2011, 2012, 2013
 #     The Board of Trustees of the Leland Stanford Junior University
 #
 # This program is free software; you may redistribute it and/or modify it
 # under the same terms as Perl itself.
+
+##############################################################################
+# Modules and declarations
+##############################################################################
+
+use 5.006;
+use strict;
+use warnings;
+
+use vars qw($JUSTPRINT $MAIL $MAILOPEN);
+use subs qw(system);
+
+use Getopt::Long qw(GetOptions);
+use POSIX qw(strftime);
+
+# AFS::Utils is loaded to get the setpag function if a ticket cache is
+# specified on the command line.
 
 ##############################################################################
 # Site configuration
@@ -41,22 +58,6 @@ $VOS ||= 'vos';
 if (-f '/etc/afs-admin-tools/config') {
     require '/etc/afs-admin-tools/config';
 }
-
-##############################################################################
-# Modules and declarations
-##############################################################################
-
-require 5.005;
-
-use strict;
-use vars qw($JUSTPRINT $MAIL $MAILOPEN);
-use subs qw(system);
-
-use Getopt::Long qw(GetOptions);
-use POSIX qw(strftime);
-
-# AFS::Utils is loaded to get the setpag function if a ticket cache is
-# specified on the command line.
 
 ##############################################################################
 # Overrides
@@ -420,6 +421,11 @@ __END__
 # Documentation
 ##############################################################################
 
+=for stopwords
+ACL AFS PAG .YYYY .YYYMM afs-admin-tools aklog fs -hmnqv newsyslog
+subdirectories volcreate volcreate's volcreate-logs vos logs.service.YYYYMM
+YYYYMM
+
 =head1 NAME
 
 volcreate-logs - Create and grant quota to log volumes in AFS
@@ -585,11 +591,12 @@ increase quota or create new log volumes as needed.  The syntax is:
         quota: <quota>
     }
 
-where <volume-name> is the base name of the volume (.YYYY or .YYYYMM will
-be appended), <base-path> is the root of the log structure (its immediate
-subdirectories must be the year directories), type is either montly to
-create a new volume for each month or yearly to create one volume for each
-year of logs, and <quota> is the starting quota for each volume in MB.
+where <volume-name> is the base name of the volume (C<.YYYY> or C<.YYYYMM>
+will be appended), <base-path> is the root of the log structure (its
+immediate subdirectories must be the year directories), type is either
+monthly to create a new volume for each month or yearly to create one
+volume for each year of logs, and <quota> is the starting quota for each
+volume in MB.
 
 Blank lines and lines beginning with C<#> are ignored.
 

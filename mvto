@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
 our $VERSION = '@VERSION@ @DATE@';
 #
 # mvto -- Move an AFS volume from anywhere, intelligently.
@@ -12,11 +12,25 @@ our $VERSION = '@VERSION@ @DATE@';
 #
 # Written by Russ Allbery <rra@stanford.edu>
 # Based on code by Neil Crellin <neilc@stanford.edu>
-# Copyright 1998, 1999, 2001, 2003, 2004, 2005, 2006, 2011
+# Copyright 1998, 1999, 2001, 2003, 2004, 2005, 2006, 2011, 2013
 #    The Board of Trustees of the Leland Stanford Junior University
 #
 # This program is free software; you may redistribute it and/or modify it
 # under the same terms as Perl itself.
+
+##############################################################################
+# Modules and declarations
+##############################################################################
+
+use 5.006;
+use strict;
+use warnings;
+
+use vars qw($JUSTPRINT);
+use subs qw(system);
+
+use Date::Parse qw(str2time);
+use Getopt::Long qw(GetOptions);
 
 ##############################################################################
 # Site configuration
@@ -24,7 +38,7 @@ our $VERSION = '@VERSION@ @DATE@';
 
 # The threshold up to which mvto is willing to fill a partition, expressed as
 # a ratio of its total available space.
-our $THRESHOLD = '0.90';
+our $MVTO_THRESHOLD = '0.90';
 
 # The full path to vos.  vos may be in an sbin directory, which may not be on
 # the user's path by default, so check there first.
@@ -35,19 +49,6 @@ $VOS ||= 'vos';
 if (-f '/etc/afs-admin-tools/config') {
     require '/etc/afs-admin-tools/config';
 }
-
-##############################################################################
-# Modules and declarations
-##############################################################################
-
-require 5.006;
-
-use strict;
-use vars qw($JUSTPRINT);
-use subs qw(system);
-
-use Date::Parse qw(str2time);
-use Getopt::Long qw(GetOptions);
 
 ##############################################################################
 # Overrides
@@ -540,6 +541,10 @@ __END__
 # Documentation
 ##############################################################################
 
+=for stopwords
+AFS Crellin RO RW addsite afs-admin-tools afssvr3 afssvr5 afssvr6 afssvr9
+afssvr10 afssvr11 -fns -hfnsv mvto mvto's partinfo pubsw unreplicated vos
+
 =head1 NAME
 
 mvto - Move an AFS volume from anywhere, intelligently
@@ -611,7 +616,7 @@ will have C<afssvr> prepended to them.
 As with all AFS commands, partitions may be specified as a simple letter,
 as C<vicepX>, or as C</vicepX>.  More than 26 partitions on one server is
 not supported.  Partitions may also be specified as C<.>, in which case
-the parition on that server with the most free space according to B<vos
+the partition on that server with the most free space according to B<vos
 partinfo> is chosen, or as a string of letters and letter ranges such as
 C<ace-gm>, in which case the partition of the set specified with the most
 free space is chosen.  (In this example, the set is /vicepa, /vicepc,
@@ -695,7 +700,7 @@ volume alone.
 
 The safety threshold.  B<mvto> will not move a volume or add a replica to
 a partition if by doing so it would increase the usage of that partition
-above this treshold (specified as a ratio of used space to total space).
+above this threshold (specified as a ratio of used space to total space).
 The default is 0.9 (90% full).  To disable this safety check, use C<-t
 1.0>.
 
