@@ -1,21 +1,24 @@
 # Makefile.PL for afs-admin-tools.
 #
 # Written by Russ Allbery <rra@stanford.edu>
-# Copyright 2011 Board of Trustees, Leland Stanford Jr. University
+# Copyright 2011, 2013
+#     The Board of Trustees of the Leland Stanford Junior University
 #
 # See LICENSE for licensing terms.
 
 use ExtUtils::MakeMaker;
 
 WriteMakefile (
-    NAME         => 'afs-admin-tools',
-    ($] >= 5.005 ?
-     (ABSTRACT   => 'Utilities for AFS management',
-      AUTHOR     => 'Russ Allbery (rra@stanford.edu)') : ()),
-    EXE_FILES    => [ qw(frak fsr lsmounts mvto partinfo volcreate
-                         volcreate-logs volnuke) ],
-    ($] >= 5.010 ?
-     (LICENSE    => 'perl') : ()),
-    VERSION_FROM => 'VERSION',
-    dist         => { COMPRESS => 'gzip', SUFFIX => 'gz' }
+    NAME             => 'afs-admin-tools',
+    ABSTRACT         => 'Utilities for AFS management',
+    AUTHOR           => 'Russ Allbery <rra@stanford.edu>',
+    EXE_FILES        => [ qw(frak fsr lsmounts mvto partinfo volcreate
+                             volcreate-logs volnuke) ],
+    VERSION_FROM     => 'VERSION',
+    MIN_PERL_VERSION => 5.006,
+    dist             => { COMPRESS => 'gzip', SUFFIX => 'gz' }
+
+    # ExtUtils::MakeMaker only understands this with Perl 5.10 or later.
+    ## no critic (ValuesAndExpressions::ProhibitMagicNumbers)
+    ($] >= 5.010 ? (LICENSE => 'perl') : ()),
 );
