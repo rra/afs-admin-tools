@@ -6,9 +6,13 @@
 #
 # See LICENSE for licensing terms.
 
+use 5.006;
+use strict;
+use warnings;
+
 use ExtUtils::MakeMaker;
 
-WriteMakefile (
+WriteMakefile(
     NAME             => 'afs-admin-tools',
     ABSTRACT         => 'Utilities for AFS management',
     AUTHOR           => 'Russ Allbery <rra@stanford.edu>',
@@ -16,7 +20,7 @@ WriteMakefile (
                              volcreate-logs volnuke) ],
     VERSION_FROM     => 'VERSION',
     MIN_PERL_VERSION => 5.006,
-    dist             => { COMPRESS => 'gzip', SUFFIX => 'gz' }
+    dist             => { COMPRESS => 'gzip', SUFFIX => 'gz' },
 
     # ExtUtils::MakeMaker only understands this with Perl 5.10 or later.
     ## no critic (ValuesAndExpressions::ProhibitMagicNumbers)
