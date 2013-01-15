@@ -32,5 +32,4 @@ if (!eval { require Test::Spelling }) {
 Test::Spelling->import;
 
 # Check all POD in the distribution.
-my @files = glob 'check_afs_*';
-all_pod_files_spelling_ok(@files);
+all_pod_files_spelling_ok();

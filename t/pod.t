@@ -23,5 +23,4 @@ if (!eval { require Test::Pod }) {
 Test::Pod->import;
 
 # Check all POD in the distribution.
-my @files = glob 'check_afs_*';
-all_pod_files_ok(@files);
+all_pod_files_ok();
