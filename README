@@ -83,11 +83,12 @@ REQUIREMENTS
   later.  They require the AFS client binaries be available in either some
   standard locations (in /usr or /usr/local) or on the PATH.
 
-  frak requires Stat::lsMode, available from CPAN.  mvto and volnuke
+  frak requires Stat::lsMode, available from CPAN, and prefers to have a
+  diff program that supports -u (such as GNU diff).  mvto and volnuke
   require Date::Parse, available as part of the TimeDate distribution on
   CPAN.  volcreate-logs requires AFS::Utils (part of the AFS Perl module
-  suite) and an aklog binary if run with a ticket cache specified on the
-  command line.
+  suite), an aklog binary if run with a ticket cache specified on the
+  command line, and a local sendmail command if told to mail reports.
 
   To run the full test suite, Test::More is required (part of Perl since
   5.6.2).  It also makes use of additional Perl modules for some tests.
