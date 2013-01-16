@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = '@VERSION@ @DATE@';
+our $VERSION = '2.0 (2013-01-15)';
 #
 # volcreate -- Create a volume, mount and set acl and quota
 #
