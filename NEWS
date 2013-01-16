@@ -1,6 +1,6 @@
                    User-Visible afs-admin-tools Changes
 
-afs-admin-tools 2.0 (unreleased)
+afs-admin-tools 2.0 (2013-01-15)
 
     Initial tarball release, based on frak 1.34, fsr 1.14, lsmounts 1.8,
     mvto 1.17, partinfo 1.3, volcreate 1.26, volcreate-logs 1.22, and
