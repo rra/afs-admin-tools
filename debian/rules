@@ -1,7 +1,14 @@
 #!/usr/bin/make -f
 
+PACKAGE := $(shell dh_listpackages)
+
 %:
 	dh $@
+
+override_dh_auto_install:
+	dh_auto_install
+	mkdir -p debian/$(PACKAGE)/etc/afs-admin-tools
+	install -m 644 debian/config/* debian/$(PACKAGE)/etc/afs-admin-tools/
 
 override_dh_installchangelogs:
 	dh_installchangelogs NEWS
