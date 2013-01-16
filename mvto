@@ -10,6 +10,9 @@ our $VERSION = '2.0 (2013-01-15)';
 # replication pattern of a volume differs from what you want it to be and
 # correct it.
 #
+# "The greater thing in this world is not so much where we stand as in what
+# direction we are going." -- Oliver Wendell Holmes, Jr.
+#
 # Written by Russ Allbery <rra@stanford.edu>
 # Based on code by Neil Crellin <neilc@stanford.edu>
 # Copyright 1998, 1999, 2001, 2003, 2004, 2005, 2006, 2011, 2013
