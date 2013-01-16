@@ -1,6 +1,6 @@
-afs-admin-tools (2.0-1) UNRELEASED; urgency=low
+afs-admin-tools (2.0-1) unstable; urgency=low
 
   * Initial packaging.
 
- -- Russ Allbery <rra@debian.org>  Tue, 07 Dec 2010 09:35:28 -0800
+ -- Russ Allbery <rra@debian.org>  Tue, 15 Jan 2013 20:53:44 -0800
 
