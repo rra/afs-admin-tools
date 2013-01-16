@@ -1,0 +1,24 @@
+Source: afs-admin-tools
+Section: net
+Priority: extra
+Build-Depends: debhelper (>= 9)
+Maintainer: Russ Allbery <rra@debian.org>
+Bugs: mailto:rra@debian.org
+Homepage: http://www.eyrie.org/~eagle/software/afs-admin-tools/
+Standards-Version: 3.9.4
+Vcs-Git: git://git.eyrie.org/afs/afs-admin-tools.git
+Vcs-Browser: http://git.eyrie.org/?p=afs/afs-admin-tools.git
+
+Package: afs-admin-tools
+Architecture: all
+Depends: ${misc:Depends}, ${perl:Depends}, libstat-lsmode-perl,
+ libtimedate-perl, openafs-client
+Recommends: libafs-perl, openafs-krb5
+Description: Utilities for managing the AFS distributed file system
+ AFS is a distributed network file system.  afs-admin-tools provides a
+ collection of additional utilities to help ease administration of AFS
+ servers, volumes, and directory ACLs.  It includes scripts to report the
+ differences between read-only and read/write volumes; make all fs
+ commands recursive; create, delete, and move volumes more easily than
+ with vos alone; and report AFS server partition usage in a more readable
+ form.
