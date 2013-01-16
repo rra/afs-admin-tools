@@ -9,6 +9,9 @@ our $VERSION = '2.0 (2013-01-15)';
 # of the differences so that you can see exactly what will be changed when the
 # volume is released.
 #
+# "Don't be a _little_ paranoid; worry about everything, or let it all go."
+#                                      -- James Alan Gardner, _Trapped_
+#
 # Written by Neil Crellin <neilc@stanford.edu>
 # Updated by Russ Allbery <rra@stanford.edu>
 # Copyright 1998, 1999, 2004, 2011, 2013
@@ -866,6 +869,10 @@ be complete paths unless B<-m> is given.  If B<-m> is given, paths will be
 relative to the root of the tree specified by the path given on the
 command line.
 
+The name B<frak> comes from the swear word used in I<Battlestar
+Galactica>, which should give you some ideas about the origin of this
+program.
+
 =head1 OPTIONS
 
 =over 4
@@ -1066,5 +1073,8 @@ L<bundle(1)>, L<diff(1)>
 This script is part of the afs-admin-tools package.  The most recent
 version is available from the afs-admin-tools web page at
 L<http://www.eyrie.org/~eagle/software/afs-admin-tools/>.
+
+B<bundle>, for the B<--change-dir> feature, is available from
+L<http://www.eyrie.org/~eagle/software/bundle/>.
 
 =cut
