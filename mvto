@@ -35,6 +35,9 @@ use subs qw(system);
 use Date::Parse qw(str2time);
 use Getopt::Long qw(GetOptions);
 
+# This will be set to -localauth if that flag should be added to vos commands.
+our $LOCALAUTH = '';
+
 ##############################################################################
 # Site configuration
 ##############################################################################
@@ -83,7 +86,8 @@ sub findpartition {
     $part =~ s%^/?vicep%%;
     if ($part eq '.' || (length ($part) > 1 && $part =~ /^[a-z-]+$/)) {
         $part = 'a-z' if $part eq '.';
-        open (INFO, "$VOS partinfo $server |") or die "$0: can't fork: $!\n";
+        open (INFO, "$VOS partinfo $server $LOCALAUTH |")
+            or die "$0: can't fork: $!\n";
         my @free;
         local $_;
         while (<INFO>) {
@@ -111,7 +115,7 @@ sub findpartition {
 sub available_space {
     my ($server, $partition) = @_;
     return if $MVTO_THRESHOLD >= 1.0;
-    open (INFO, "$VOS partinfo $server $partition |")
+    open (INFO, "$VOS partinfo $server $partition $LOCALAUTH |")
         or die "$0: can't fork: $!\n";
     local $_;
     while (<INFO>) {
@@ -135,7 +139,7 @@ sub available_space {
 sub volinfo {
     my ($volume, $checkro) = @_;
     my (%results, $rotime, $rwtime);
-    open (VEX, "$VOS examine $volume |")
+    open (VEX, "$VOS examine $volume $LOCALAUTH |")
         or die "$0: can't fork $VOS examine: $!\n";
     local $_;
     $results{sites} = 0;
@@ -159,7 +163,7 @@ sub volinfo {
     die "$0: unable to parse vos examine $volume\n"
         unless ($results{rwserver} && $results{size});
     if ($results{sites}) {
-        open (VEX, "$VOS examine $volume.readonly |")
+        open (VEX, "$VOS examine $volume.readonly $LOCALAUTH |")
             or die "$0: can't fork $VOS examine for readonly: $!\n";
         while (<VEX>) {
             if (/^\s+Last Update (.*)/) {
@@ -369,6 +373,9 @@ sub move_volume {
         print "\n";
     }
     for (@commands) {
+        if ($LOCALAUTH) {
+            push @$_, $LOCALAUTH;
+        }
         print "@$_\n";
         system @$_;
     }
@@ -436,6 +443,9 @@ sub move_single {
 
     # Run the commands.
     for (@commands) {
+        if ($LOCALAUTH) {
+            push @$_, $LOCALAUTH;
+        }
         print "@$_\n";
         system @$_;
     }
@@ -447,7 +457,7 @@ sub move_single {
 
 # Usage message, in case the command line syntax is wrong.
 sub usage {
-    die "Usage: $0 [-fns] <vol> <server> <part> [<server> <part> ...]\n";
+    die "Usage: $0 [-Afns] <vol> <server> <part> [<server> <part> ...]\n";
 }
 
 # Trim extraneous garbage from the path.
@@ -460,7 +470,8 @@ $| = 1;
 # Parse our options.
 my ($help, $force, $list, $location, $single, $version);
 Getopt::Long::config ('bundling', 'no_ignore_case');
-GetOptions ('f|force'              => \$force,
+GetOptions ('A|localauth'          => \$LOCALAUTH,
+            'f|force'              => \$force,
             'h|help'               => \$help,
             'l|list=s'             => \$list,
             'L|location-list=s'    => \$location,
@@ -475,6 +486,7 @@ if ($help) {
     print "mvto $VERSION\n";
     exit 0;
 }
+$LOCALAUTH = '-localauth' if $LOCALAUTH;
 
 # Volume name is always the first argument unless -l or -L was given, and the
 # rest of our arguments must be server and partition pairs.
@@ -490,13 +502,13 @@ die "$0: both -l and -L may not be specified at the same time\n"
     if ($list && $location);
 
 # If -L is given, there should be no other command-line arguments.
-die "Usage: $0 [-fns] [-t <threshold>] -L <list>\n"
+die "Usage: $0 [-Afns] [-t <threshold>] -L <list>\n"
     if ($location && @ARGV > 0);
 
 # If -s was given, there must be exactly four arguments left, a pair giving
 # the current server and partition, and a pair saying where that replica of
 # the volume should be moved to.
-die "Usage: $0 -s (-l <list> | <volume>) <server> <part> <server> <part>\n"
+die "Usage: $0 [-A] -s (-l <list> | <vol>) <server> <part> <server> <part>\n"
     if ($single && @ARGV != 4 && !$location);
 
 # Do the work.  If -l or -L was given, this means looping on the volumes
@@ -546,7 +558,8 @@ __END__
 
 =for stopwords
 AFS Crellin RO RW addsite afs-admin-tools afssvr3 afssvr5 afssvr6 afssvr9
-afssvr10 afssvr11 -fns -hfnsv mvto mvto's partinfo pubsw unreplicated vos
+afssvr10 afssvr11 -Afns -Ahfnsv mvto mvto's partinfo pubsw unreplicated vos
+krenew kstart --localauth -localauth
 
 =head1 NAME
 
@@ -554,13 +567,13 @@ mvto - Move an AFS volume from anywhere, intelligently
 
 =head1 SYNOPSIS
 
-mvto [B<-hfnsv>] [B<-t> I<threshold>] I<volume> I<server> I<partition>
+mvto [B<-Ahfnsv>] [B<-t> I<threshold>] I<volume> I<server> I<partition>
 [I<server> I<partition> ...]
 
-mvto [B<-fns>] B<-l> I<list> [B<-t> I<threshold>] I<server> I<partition>
+mvto [B<-Afns>] B<-l> I<list> [B<-t> I<threshold>] I<server> I<partition>
 [I<server> I<partition> ...]
 
-mvto [B<-fns>] B<-L> I<list> [B<-t> I<threshold>]
+mvto [B<-Afns>] B<-L> I<list> [B<-t> I<threshold>]
 
 =head1 DESCRIPTION
 
@@ -631,16 +644,25 @@ B<mvto> passes the verbose flag to most B<vos> commands it runs.
 
 =over 4
 
-=item B<-h>, B<--help>
+=item B<-A>, B<--localauth>
 
-Print out this documentation (which is done simply by feeding the script
-to C<perldoc -t>).
+Call commands with B<-localauth> to use the local F<KeyFile>.  This will
+require running B<mvto> as root on a system that has the AFS F<KeyFile>,
+such as a file server system.  When running in this mode, no tokens are
+required, so there is no risk of tokens expiring during a long B<mvto>
+process, leaving partially-moved volumes and other issues requiring a
+manual cleanup.
 
 =item B<-f>, B<--force>
 
 Release a volume if a release is required, even if that volume has
 unreleased changes.  Without this flag, B<mvto> will refuse to release a
 volume that has unreleased changes.
+
+=item B<-h>, B<--help>
+
+Print out this documentation (which is done simply by feeding the script
+to C<perldoc -t>).
 
 =item B<-l> I<list>, B<--list>=I<list>
 
@@ -790,6 +812,22 @@ partition to over 90% full:
 
     mvto -t 0.90 -L locations
 
+=head1 CAVEATS
+
+B<mvto> by default uses the tokens of the user running B<mvto>.  This
+means there is a risk of the tokens expiring in the middle of the B<mvto>
+run if a lot of volumes are being moved.  Be aware of the lifespan of your
+tokens and obtain new tokens right before running B<mvto> if the job will
+run for some time.
+
+If your Kerberos realm allows renewable tickets, you may want to run
+B<mvto> under B<krenew> (part of the kstart package), which will keep
+renewing your tickets while B<mvto> is running.
+
+Alternately, you can run B<mvto> as root on a system with a copy of the
+AFS F<KeyFile> and use the B<-A> option to pass B<-localauth> to all of
+the B<vos> commands.  This will eliminate the risk of tokens expiring.
+
 =head1 BUGS
 
 If a replicated volume has no RO replica on the same server as its RW
@@ -812,8 +850,11 @@ under the same terms as Perl itself.
 
 =head1 SEE ALSO
 
-L<vos(1)>, L<vos_addsite(1)>, L<vos_backup(1)>, L<vos_examine(1)>,
-L<vos_move(1)>, L<vos_release(1)>, L<vos_remove(1)>
+L<krenew(1)>, L<vos(1)>, L<vos_addsite(1)>, L<vos_backup(1)>,
+L<vos_examine(1)>, L<vos_move(1)>, L<vos_release(1)>, L<vos_remove(1)>
+
+B<krenew> is part of the kstart package, which is available at
+L<http://www.eyrie.org/~eagle/software/kstart/>.
 
 This script is part of the afs-admin-tools package.  The most recent
 version is available from the afs-admin-tools web page at
