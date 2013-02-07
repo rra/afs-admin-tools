@@ -805,7 +805,7 @@ __END__
 
 =for stopwords
 non-AFS AFS -CDhLmqsv Crellin afs-admin-tools changedir frak fs --munge
-ro-path rw-path vos
+ro-path rw-path vos Battlestar Galactica --change-dir
 
 =head1 NAME
 
