@@ -9,7 +9,7 @@ our $VERSION = '2.0 (2013-01-15)';
 # added to that partition before putting it over 90% full.
 #
 # Written by Neil Crellin <neilc@stanford.edu>
-# Modifications by Russ Allbery <rra@stanford.edu>
+# Modifications by Russ Allbery <eagle@eyrie.org>
 # Copyright 1998, 1999, 2003, 2004, 2011, 2013
 #     The Board of Trustees of the Leland Stanford Junior University
 #
@@ -303,7 +303,7 @@ Use thresholds of 70% and 95% instead, showing the results in color:
 =head1 AUTHORS
 
 Original Perl script written by Neil Crellin <neilc@stanford.edu>,
-modified by Russ Allbery <rra@stanford.edu> to use formats, to include an
+modified by Russ Allbery <eagle@eyrie.org> to use formats, to include an
 explanatory header, to use color if wanted, and to add optional totals.
 
 =head1 COPYRIGHT AND LICENSE

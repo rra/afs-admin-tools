@@ -4,7 +4,7 @@ our $VERSION = '2.0 (2013-01-15)';
 # fsr -- Recursively apply AFS fs commands.
 #
 # Written by Carol Oliver
-# Portions by Russ Allbery <rra@stanford.edu>
+# Portions by Russ Allbery <eagle@eyrie.org>
 # Inspired by a script written by Larry Schwimmer
 # Copyright 1999, 2004, 2006, 2007, 2008, 2010, 2011, 2013
 #     The Board of Trustees of the Leland Stanford Junior University
@@ -450,7 +450,7 @@ B<fsr> ignores symlinks.
 
 =head1 AUTHORS
 
-Written by Russ Allbery <rra@stanford.edu> and Carol Oliver.  Inspired by
+Written by Russ Allbery <eagle@eyrie.org> and Carol Oliver.  Inspired by
 a script written by Larry Schwimmer.
 
 =head1 COPYRIGHT AND LICENSE

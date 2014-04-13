@@ -13,7 +13,7 @@ our $VERSION = '2.0 (2013-01-15)';
 # "The greater thing in this world is not so much where we stand as in what
 # direction we are going." -- Oliver Wendell Holmes, Jr.
 #
-# Written by Russ Allbery <rra@stanford.edu>
+# Written by Russ Allbery <eagle@eyrie.org>
 # Based on code by Neil Crellin <neilc@stanford.edu>
 # Copyright 1998, 1999, 2001, 2003, 2004, 2005, 2006, 2011, 2013
 #    The Board of Trustees of the Leland Stanford Junior University
@@ -837,7 +837,7 @@ without removing one of the other RO sites.
 
 =head1 AUTHORS
 
-Russ Allbery <rra@stanford.edu>, based on a much simpler script by Neil
+Russ Allbery <eagle@eyrie.org>, based on a much simpler script by Neil
 Crellin <neilc@stanford.edu> that only handled unreplicated volumes.
 
 =head1 COPYRIGHT AND LICENSE

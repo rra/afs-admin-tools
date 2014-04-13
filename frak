@@ -13,7 +13,7 @@ our $VERSION = '2.0 (2013-01-15)';
 #                                      -- James Alan Gardner, _Trapped_
 #
 # Written by Neil Crellin <neilc@stanford.edu>
-# Updated by Russ Allbery <rra@stanford.edu>
+# Updated by Russ Allbery <eagle@eyrie.org>
 # Copyright 1998, 1999, 2004, 2011, 2013
 #     The Board of Trustees of the Leland Stanford Junior University
 #
@@ -1056,7 +1056,7 @@ later, one could run C<apply.b> to replace the changes.
 =head1 AUTHOR
 
 Originally written by Neil Crellin <neilc@stanford.edu>.  Substantially
-reorganized and rewritten by Russ Allbery <rra@stanford.edu>.
+reorganized and rewritten by Russ Allbery <eagle@eyrie.org>.
 
 =head1 COPYRIGHT AND LICENSE
 

@@ -1,6 +1,6 @@
                        afs-admin-tools release 2.0
                       (utilities for AFS management)
-              Maintained by Russ Allbery <rra@stanford.edu>
+               Maintained by Russ Allbery <eagle@eyrie.org>
 
   These programs are free software; you may redistribute them and/or
   modify them under the same terms as Perl itself.  Please see the section
@@ -142,7 +142,7 @@ SUPPORT
   will always have the current version of this package, the current
   documentation, and pointers to any additional resources.
 
-  I welcome bug reports and patches for this package at rra@stanford.edu.
+  I welcome bug reports and patches for this package at eagle@eyrie.org.
   However, please be aware that I tend to be extremely busy and work
   projects often take priority.  I'll save your mail and get to it as soon
   as I can, but it may take me a couple of months.

@@ -14,7 +14,7 @@ our $VERSION = '2.0 (2013-01-15)';
 # short-lived, as was the person experiencing the terror."
 #                       -- Douglas Adams, _Life, the Universe, and Everything_
 #
-# Written by Russ Allbery <rra@stanford.edu>
+# Written by Russ Allbery <eagle@eyrie.org>
 # Copyright 2002, 2003, 2004, 2010, 2011, 2013
 #     The Board of Trustees of the Leland Stanford Junior University
 #
@@ -355,7 +355,7 @@ accesses.
 
 =head1 AUTHOR
 
-Russ Allbery <rra@stanford.edu>
+Russ Allbery <eagle@eyrie.org>
 
 =head1 COPYRIGHT AND LICENSE
 

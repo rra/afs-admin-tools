@@ -6,7 +6,7 @@
 # is disabled unless RRA_MAINTAINER_TESTS is set, since spelling dictionaries
 # vary too much between environments.
 #
-# Written by Russ Allbery <rra@stanford.edu>
+# Written by Russ Allbery <eagle@eyrie.org>
 #
 # The authors hereby relinquish any claim to any copyright that they may have
 # in this work, whether granted under contract or by operation of law or

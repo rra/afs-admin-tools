@@ -8,7 +8,7 @@ our $VERSION = '2.0 (2013-01-15)';
 # to run it on root.afs.
 #
 # Written by Neil Crellin <neilc@stanford.edu>
-# Modifications by Russ Allbery <rra@stanford.edu>
+# Modifications by Russ Allbery <eagle@eyrie.org>
 # Copyright 1998, 1999, 2003, 2004, 2011, 2013
 #     The Board of Trustees of the Leland Stanford Junior University
 #
@@ -290,7 +290,7 @@ backup volumes or volumes that have already been visited).
 
 Original Perl script written by Neil Crellin <neilc@stanford.edu>, as was
 the original recursive modification of that script.  Extensively modified
-by Russ Allbery <rra@stanford.edu> to merge the two scripts, add the
+by Russ Allbery <eagle@eyrie.org> to merge the two scripts, add the
 human-readable output, allow multiple command-line arguments for the
 non-recursive case, and add the ability to run loadmtpt on discovered
 volumes.

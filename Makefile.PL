@@ -1,6 +1,6 @@
 # Makefile.PL for afs-admin-tools.
 #
-# Written by Russ Allbery <rra@stanford.edu>
+# Written by Russ Allbery <eagle@eyrie.org>
 # Copyright 2011, 2013
 #     The Board of Trustees of the Leland Stanford Junior University
 #
@@ -15,7 +15,7 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     NAME             => 'afs-admin-tools',
     ABSTRACT         => 'Utilities for AFS management',
-    AUTHOR           => 'Russ Allbery <rra@stanford.edu>',
+    AUTHOR           => 'Russ Allbery <eagle@eyrie.org>',
     EXE_FILES        => [ qw(frak fsr lsmounts mvto partinfo volcreate
                              volcreate-logs volnuke) ],
     VERSION_FROM     => 'VERSION',
